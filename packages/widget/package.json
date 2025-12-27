@@ -1,0 +1,24 @@
+{
+  "name": "@chatkit/widget",
+  "version": "0.1.0",
+  "description": "Framework-agnostic ChatKit Web Component",
+  "main": "dist/chatkit-widget.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && echo 'Build complete'",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "web-component",
+    "custom-element",
+    "chatkit",
+    "rag",
+    "chatbot"
+  ],
+  "author": "Assad Sharif",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

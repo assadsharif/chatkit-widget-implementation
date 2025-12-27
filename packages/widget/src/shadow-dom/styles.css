@@ -1,0 +1,12 @@
+/**
+ * Scoped Styles for ChatKit Widget
+ *
+ * These styles are encapsulated within Shadow DOM.
+ * They do not leak to the host page, and host page styles do not leak in.
+ */
+
+.chatkit-container {
+  /* Placeholder styles */
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #333;
+}
