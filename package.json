@@ -1,0 +1,42 @@
+{
+  "name": "chatkit-widget-implementation",
+  "version": "0.1.0",
+  "description": "Phase 7+ implementation derived from Hackathon_01 design freeze v1.0 (commit 5b2a756)",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "echo 'Run npm run dev in packages/widget'",
+    "build": "echo 'Run npm run build in packages/widget'",
+    "test": "echo 'Run npm test in packages/widget'",
+    "test:e2e": "echo 'E2E tests not yet implemented'",
+    "test:a11y": "echo 'Accessibility tests not yet implemented'",
+    "lighthouse": "echo 'Lighthouse CI not yet configured'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/assadsharif/chatkit-widget-implementation.git"
+  },
+  "keywords": [
+    "chatkit",
+    "widget",
+    "rag",
+    "chatbot",
+    "accessibility",
+    "privacy",
+    "gdpr",
+    "wcag"
+  ],
+  "author": "Assad Sharif",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/assadsharif/chatkit-widget-implementation/issues"
+  },
+  "homepage": "https://github.com/assadsharif/chatkit-widget-implementation#readme",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
