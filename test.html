@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatKit Widget - Smoke Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    .test-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>ChatKit Widget - Phase 7A Smoke Test</h1>
+    <p><strong>Expected:</strong> Widget loads, UI visible, no console errors</p>
+    <hr>
+
+    <!-- ChatKit Widget -->
+    <chatkit-widget></chatkit-widget>
+
+  </div>
+
+  <!-- Load Widget -->
+  <script type="module" src="./packages/widget/dist/chatkit-widget.js"></script>
+</body>
+</html>
