@@ -80,44 +80,105 @@ chatkit-widget-implementation/
 
 ## Getting Started
 
-### Prerequisites
+**⚠️ IMPORTANT**: Read `docs/IMPLEMENTATION_GUARDRAILS.md` before writing any code.
 
-- Node.js 20+
-- npm 10+
-- Git
+### Step 0: Lock Implementation Rules ✅
 
-### Installation
+**Status**: Complete (commit d9cb7cc)
+
+- `docs/IMPLEMENTATION_GUARDRAILS.md` - Architectural seatbelt
+- `docs/DESIGN_DELTAS.md` - Design deviation log (empty)
+
+### Step 1: Tooling Baseline (Before React)
+
+Establish consistency before UI:
 
 ```bash
-git clone https://github.com/assadsharif/chatkit-widget-implementation.git
-cd chatkit-widget-implementation
+# Create editor config
+cat > .editorconfig <<EOF
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+EOF
+
+# Create Prettier config
+cat > .prettierrc <<EOF
+{
+  "semi": true,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "es5"
+}
+EOF
+
+# Create ESLint config (basic)
+npm init @eslint/config
+```
+
+**Commit**: `chore: establish tooling baseline`
+
+### Step 2: Vite + React + TypeScript ✅ (Not CRA)
+
+**⛔ Don't use `create-react-app`** (CRA is legacy and heavy)
+
+**✅ Use Vite** (faster, smaller bundles, industry-standard 2025):
+
+```bash
+cd packages/widget
+npm create vite@latest . -- --template react-ts
 npm install
+npm install tailwindcss @headlessui/react lucide-react
 ```
 
-### Development
+**Commit**: `chore: scaffold widget with Vite + React + TypeScript`
 
-```bash
-npm run dev
-```
+### Step 3: Implement in the Only Safe Order
 
-Runs the widget in development mode with hot reload.
+**Phase 7A - Tier 0 (Anonymous)** (Weeks 1-2)
 
-### Testing
+- Local session (localStorage)
+- Anonymous Q&A
+- No auth, no persistence beyond browser
 
-```bash
-npm run test          # Unit tests (Jest)
-npm run test:e2e      # E2E tests (Playwright)
-npm run test:a11y     # Accessibility tests (axe-core)
-npm run lighthouse    # Lighthouse CI
-```
+**Commit**: `feat(tier0): anonymous widget with local session`
 
-### Build
+**Phase 7B - Tier 1 (Email Verification)** (Weeks 3-4)
 
-```bash
-npm run build
-```
+- Email capture
+- Session merge (follow design exactly)
+- No OAuth yet
 
-Builds the widget for production (outputs to `packages/widget/dist/`).
+**Commit**: `feat(tier1): email verification and session merge`
+
+**Phase 7C - Tier 2 (OAuth)** (Weeks 5-6)
+
+- Google/GitHub OAuth
+- Use Better-Auth MCP design as law
+
+**Commit**: `feat(tier2): oauth integration via better-auth design`
+
+**Phase 7D - Tier 3 (Advanced)** (Weeks 7-8)
+
+- Personalization
+- Analytics hooks
+- Feature gating
+
+**Commit**: `feat(tier3): personalization and advanced features`
+
+**Phase 7E - Hardening** (Weeks 9-10)
+
+- Accessibility (WCAG checks)
+- Offline mode
+- Bundle optimization
+- Tests
+
+**Commit**: `chore: accessibility, offline support, and optimization`
 
 ---
 
