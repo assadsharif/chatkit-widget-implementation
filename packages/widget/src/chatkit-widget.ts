@@ -25,6 +25,7 @@ export class ChatKitWidget extends HTMLElement {
   private anonSessionId: string | null = null;
   private refreshInterval: number | null = null;
   private analyticsBaseURL: string = 'http://localhost:8000';
+  private rateLimitCooldowns: Map<string, number> = new Map(); // action → end timestamp
 
   constructor() {
     super();
@@ -46,6 +47,12 @@ export class ChatKitWidget extends HTMLElement {
     this.render();
     this.wireEvents();
     this.initSession();
+
+    // Phase 10: Track widget load
+    this.trackEvent('widget_loaded', {
+      session_id: this.sessionId,
+      timestamp: Date.now(),
+    });
   }
 
   private async initSession(): Promise<void> {
@@ -59,6 +66,9 @@ export class ChatKitWidget extends HTMLElement {
 
       // Phase 9: Check email verification status
       await this.checkEmailVerification();
+
+      // Phase 10: Check if token needs immediate refresh (on page reload)
+      await this.checkAndRefreshIfNeeded();
 
       // Phase 9: Setup session auto-refresh (every 5 minutes)
       this.refreshInterval = window.setInterval(async () => {
@@ -152,6 +162,12 @@ export class ChatKitWidget extends HTMLElement {
     this.addEventListener('chatkit:send', ((e: ChatKitSendEvent) => {
       this.appendMessage(e.detail.message, 'user');
 
+      // Phase 10: Track chat message
+      this.trackEvent('chat_message', {
+        message_length: e.detail.message.length,
+        question_count: this.questionCount + 1,
+      });
+
       // STEP 2: Widget Trigger - 5th question (ONLY THIS)
       // Increment question count
       this.questionCount++;
@@ -160,6 +176,8 @@ export class ChatKitWidget extends HTMLElement {
       if (this.questionCount === 5 && !this.authClient.wasSoftPromptDismissed()) {
         this.authClient.showSoftPrompt();
         this.showSoftPrompt();
+        // Phase 10: Track soft prompt shown
+        this.trackEvent('soft_prompt_shown', { trigger: '5th_question' });
       }
 
       this.handleRAGQuery(e.detail.message);
@@ -182,6 +200,8 @@ export class ChatKitWidget extends HTMLElement {
     closeBtn.addEventListener('click', () => {
       this.authClient.dismissSoftPrompt();
       this.hideSoftPrompt();
+      // Phase 10: Track soft prompt dismissed
+      this.trackEvent('soft_prompt_dismissed');
     });
 
     // Wire CTA link (open signup modal)
@@ -190,6 +210,8 @@ export class ChatKitWidget extends HTMLElement {
       this.authClient.openSignupModal();
       this.hideSoftPrompt();
       this.showSignupModal();
+      // Phase 10: Track signup modal opened
+      this.trackEvent('signup_modal_opened', { source: 'soft_prompt' });
     });
   }
 
@@ -209,6 +231,8 @@ export class ChatKitWidget extends HTMLElement {
       this.authClient.closeSignupModal();
       this.hideSignupModal();
       this.clearSignupForm();
+      // Phase 10: Track modal closed
+      this.trackEvent('signup_modal_closed', { method: 'close_button' });
     });
 
     // Wire cancel button
@@ -216,6 +240,8 @@ export class ChatKitWidget extends HTMLElement {
       this.authClient.closeSignupModal();
       this.hideSignupModal();
       this.clearSignupForm();
+      // Phase 10: Track modal closed
+      this.trackEvent('signup_modal_closed', { method: 'cancel_button' });
     });
 
     // Wire submit button
@@ -275,9 +301,19 @@ export class ChatKitWidget extends HTMLElement {
     }
 
     this.appendMessage('👋 You have been logged out. Chat remains available anonymously.', 'assistant');
+
+    // Phase 10: Track logout
+    this.trackEvent('logout');
   }
 
   private async handleSaveChat(): Promise<void> {
+    // Phase 10: Check rate limit before proceeding
+    if (this.isRateLimited('save_chat')) {
+      const remainingSeconds = this.getRateLimitRemaining('save_chat');
+      this.showRateLimitToast(remainingSeconds);
+      return;
+    }
+
     // Phase 8: Real Save Chat with API call
     if (this.authClient.isAuthenticated()) {
       // User is authenticated - call save API
@@ -301,9 +337,11 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
-          // Phase 9: Use toast for rate limit errors
+          // Phase 10: Use countdown toast for rate limit errors
           if (response.status === 429) {
-            this.showToast(error.error?.message || 'Rate limit exceeded. Please try again later.', 'error');
+            this.setRateLimitCooldown('save_chat', 60); // 60 second cooldown
+            this.showRateLimitToast(60);
+            this.updateButtonStates();
             return;
           }
           throw new Error(error.error?.message || 'Failed to save chat');
@@ -311,6 +349,8 @@ export class ChatKitWidget extends HTMLElement {
 
         const data = await response.json();
         this.showToast(`💾 Chat saved successfully! (ID: ${data.chat_id})`, 'success');
+        // Phase 10: Track save chat success
+        this.trackEvent('save_chat', { chat_id: data.chat_id, message_count: this.messages.length });
       } catch (error: any) {
         this.removeMessage(loadingId);
         this.showToast(error.message || 'Failed to save chat', 'error');
@@ -323,6 +363,13 @@ export class ChatKitWidget extends HTMLElement {
   }
 
   private async handlePersonalize(): Promise<void> {
+    // Phase 10: Check rate limit before proceeding
+    if (this.isRateLimited('personalize')) {
+      const remainingSeconds = this.getRateLimitRemaining('personalize');
+      this.showRateLimitToast(remainingSeconds);
+      return;
+    }
+
     // Phase 8: Real Personalize with API call
     if (this.authClient.isAuthenticated()) {
       // User is authenticated - call personalize API
@@ -345,9 +392,11 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
-          // Phase 9: Use toast for rate limit errors
+          // Phase 10: Use countdown toast for rate limit errors
           if (response.status === 429) {
-            this.showToast(error.error?.message || 'Rate limit exceeded. Please try again later.', 'error');
+            this.setRateLimitCooldown('personalize', 60); // 60 second cooldown
+            this.showRateLimitToast(60);
+            this.updateButtonStates();
             return;
           }
           throw new Error(error.error?.message || 'Failed to personalize');
@@ -359,6 +408,8 @@ export class ChatKitWidget extends HTMLElement {
         const recsText = `✨ Personalized recommendations:\n${data.recommendations.map((r: string) => `• ${r}`).join('\n')}`;
         this.appendMessage(recsText, 'assistant');
         this.showToast('Personalization applied!', 'success');
+        // Phase 10: Track personalize success
+        this.trackEvent('personalize', { recommendation_count: data.recommendations.length });
       } catch (error: any) {
         this.removeMessage(loadingId);
         this.showToast(error.message || 'Failed to personalize', 'error');
@@ -401,6 +452,8 @@ export class ChatKitWidget extends HTMLElement {
           `✅ Verification email sent to ${email}. Please check your inbox!`,
           'assistant'
         );
+        // Phase 10: Track signup initiated
+        this.trackEvent('signup_initiated', { email_domain: email.split('@')[1] });
       }
     } catch (error: any) {
       // Show error
@@ -541,7 +594,7 @@ export class ChatKitWidget extends HTMLElement {
 
   // ===== Phase 9: Toast Notifications =====
 
-  private showToast(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
+  private showToast(message: string, type: 'success' | 'error' | 'info' = 'info', duration: number = 5000): void {
     const container = this.shadow.querySelector('.chatkit-toast-container') as HTMLElement;
     if (!container) return;
 
@@ -564,12 +617,66 @@ export class ChatKitWidget extends HTMLElement {
     toast.appendChild(closeBtn);
     container.appendChild(toast);
 
-    // Auto-remove after 5 seconds
+    // Auto-remove after duration
     setTimeout(() => {
       if (toast.parentNode) {
         toast.remove();
       }
-    }, 5000);
+    }, duration);
+  }
+
+  private showRateLimitToast(secondsRemaining: number): void {
+    /**
+     * Phase 10: Rate limit toast with countdown timer.
+     *
+     * Shows "Rate limit exceeded. Try again in X seconds" with live countdown.
+     */
+    const container = this.shadow.querySelector('.chatkit-toast-container') as HTMLElement;
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const toastId = `toast-ratelimit-${Date.now()}`;
+    toast.id = toastId;
+    toast.className = 'chatkit-toast chatkit-toast-error';
+
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = `⏱️ Rate limit exceeded. Try again in ${secondsRemaining}s`;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'chatkit-toast-close';
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => {
+      toast.remove();
+    });
+
+    toast.appendChild(messageSpan);
+    toast.appendChild(closeBtn);
+    container.appendChild(toast);
+
+    // Countdown timer
+    let remaining = secondsRemaining;
+    const countdown = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        messageSpan.textContent = `⏱️ Rate limit exceeded. Try again in ${remaining}s`;
+      } else {
+        messageSpan.textContent = '✅ You can try again now!';
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 2000);
+        clearInterval(countdown);
+      }
+    }, 1000);
+
+    // Auto-remove after countdown completes
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.remove();
+      }
+      clearInterval(countdown);
+    }, (secondsRemaining + 2) * 1000);
   }
 
   // ===== Phase 9: Email Verification =====
@@ -630,6 +737,34 @@ export class ChatKitWidget extends HTMLElement {
 
   // ===== Phase 9: Session Refresh =====
 
+  private async checkAndRefreshIfNeeded(): Promise<void> {
+    /**
+     * Phase 10: Check if token needs refreshing after page reload.
+     *
+     * Refreshes token if last refresh was more than 4 minutes ago.
+     * This ensures smooth experience across page reloads.
+     */
+    const lastRefresh = localStorage.getItem('last_token_refresh');
+    if (!lastRefresh) {
+      // First time - store current timestamp
+      localStorage.setItem('last_token_refresh', Date.now().toString());
+      return;
+    }
+
+    const lastRefreshTime = parseInt(lastRefresh, 10);
+    const timeSinceRefresh = Date.now() - lastRefreshTime;
+    const fourMinutes = 4 * 60 * 1000;
+
+    if (timeSinceRefresh > fourMinutes) {
+      // Token is stale - refresh it
+      const refreshed = await this.refreshToken();
+      if (!refreshed) {
+        // Refresh failed - logout
+        await this.handleLogout();
+      }
+    }
+  }
+
   private async refreshToken(): Promise<boolean> {
     try {
       const oldToken = this.authClient.getSessionToken();
@@ -648,6 +783,9 @@ export class ChatKitWidget extends HTMLElement {
 
       // Update token in authClient
       this.authClient.updateSessionToken(data.token);
+
+      // Phase 10: Store refresh timestamp
+      localStorage.setItem('last_token_refresh', Date.now().toString());
 
       return true;
     } catch (error) {
@@ -736,12 +874,12 @@ export class ChatKitWidget extends HTMLElement {
   // ===== Phase 10: Analytics Tracking =====
 
   private async trackEvent(eventType: string, eventData?: Record<string, any>): Promise<void> {
-    """
-    Track analytics event to backend.
-
-    Sends event to POST /api/v1/analytics/event.
-    Works for both authenticated and anonymous users.
-    """
+    /**
+     * Track analytics event to backend.
+     *
+     * Sends event to POST /api/v1/analytics/event.
+     * Works for both authenticated and anonymous users.
+     */
     try {
       const token = this.authClient.getSessionToken();
       const headers: Record<string, string> = {
@@ -765,6 +903,88 @@ export class ChatKitWidget extends HTMLElement {
     } catch (error) {
       // Silently fail - analytics should never break UX
       console.debug('Analytics event failed:', eventType, error);
+    }
+  }
+
+  // ===== Phase 10: Rate Limit Feedback =====
+
+  private isRateLimited(action: string): boolean {
+    /**
+     * Check if action is currently rate-limited.
+     */
+    const cooldownEnd = this.rateLimitCooldowns.get(action);
+    if (!cooldownEnd) return false;
+
+    const now = Date.now();
+    if (now >= cooldownEnd) {
+      // Cooldown expired - clear it
+      this.rateLimitCooldowns.delete(action);
+      this.updateButtonStates();
+      return false;
+    }
+
+    return true;
+  }
+
+  private getRateLimitRemaining(action: string): number {
+    /**
+     * Get remaining seconds for rate limit cooldown.
+     */
+    const cooldownEnd = this.rateLimitCooldowns.get(action);
+    if (!cooldownEnd) return 0;
+
+    const now = Date.now();
+    const remaining = Math.ceil((cooldownEnd - now) / 1000);
+    return Math.max(0, remaining);
+  }
+
+  private setRateLimitCooldown(action: string, seconds: number): void {
+    /**
+     * Set rate limit cooldown for an action.
+     */
+    const cooldownEnd = Date.now() + (seconds * 1000);
+    this.rateLimitCooldowns.set(action, cooldownEnd);
+
+    // Auto-clear after cooldown
+    setTimeout(() => {
+      this.rateLimitCooldowns.delete(action);
+      this.updateButtonStates();
+    }, seconds * 1000);
+  }
+
+  private updateButtonStates(): void {
+    /**
+     * Update button disabled states based on rate limits.
+     */
+    const saveChatBtn = this.shadow.querySelector('.chatkit-save-chat-btn') as HTMLButtonElement;
+    const personalizeBtn = this.shadow.querySelector('.chatkit-personalize-btn') as HTMLButtonElement;
+
+    if (saveChatBtn) {
+      const isLimited = this.isRateLimited('save_chat');
+      saveChatBtn.disabled = isLimited;
+      saveChatBtn.style.opacity = isLimited ? '0.5' : '1';
+      saveChatBtn.style.cursor = isLimited ? 'not-allowed' : 'pointer';
+
+      if (isLimited) {
+        const remaining = this.getRateLimitRemaining('save_chat');
+        saveChatBtn.title = `Rate limited. Try again in ${remaining}s`;
+      } else {
+        saveChatBtn.title = 'Save this conversation';
+      }
+    }
+
+    if (personalizeBtn) {
+      const isLimited = this.isRateLimited('personalize');
+      personalizeBtn.disabled = isLimited;
+      personalizeBtn.style.opacity = isLimited ? '0.5' : '1';
+      personalizeBtn.style.cursor = isLimited ? 'not-allowed' : 'pointer';
+
+      if (isLimited) {
+        const remaining = this.getRateLimitRemaining('personalize');
+        personalizeBtn.title = `Rate limited. Try again in ${remaining}s`;
+      } else {
+        personalizeBtn.title = 'Get personalized recommendations';
+      }
     }
   }
 }
