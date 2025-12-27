@@ -24,6 +24,7 @@ export class ChatKitWidget extends HTMLElement {
   private messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   private anonSessionId: string | null = null;
   private refreshInterval: number | null = null;
+  private analyticsBaseURL: string = 'http://localhost:8000';
 
   constructor() {
     super();
@@ -730,6 +731,41 @@ export class ChatKitWidget extends HTMLElement {
     localStorage.removeItem('anon_session_id');
     localStorage.removeItem('anon_messages');
     this.anonSessionId = null;
+  }
+
+  // ===== Phase 10: Analytics Tracking =====
+
+  private async trackEvent(eventType: string, eventData?: Record<string, any>): Promise<void> {
+    """
+    Track analytics event to backend.
+
+    Sends event to POST /api/v1/analytics/event.
+    Works for both authenticated and anonymous users.
+    """
+    try {
+      const token = this.authClient.getSessionToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      await fetch(`${this.analyticsBaseURL}/api/v1/analytics/event`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          event_type: eventType,
+          event_data: eventData || {},
+        }),
+      });
+
+      // Fire and forget - don't block UI on analytics
+    } catch (error) {
+      // Silently fail - analytics should never break UX
+      console.debug('Analytics event failed:', eventType, error);
+    }
   }
 }
 
