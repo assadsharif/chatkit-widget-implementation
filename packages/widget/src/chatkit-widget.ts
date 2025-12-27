@@ -12,14 +12,23 @@
 import { getTemplate } from './shadow-dom/template.js';
 import { getStyles } from './shadow-dom/styles.js';
 import { ChatKitSendEvent } from './events/widget-events.js';
+import { RAGClient, RAGClientError } from './services/rag-client.js';
 
 export class ChatKitWidget extends HTMLElement {
   private shadow: ShadowRoot;
+  private ragClient: RAGClient;
+  private sessionId: string;
 
   constructor() {
     super();
     // Attach Shadow DOM (encapsulation)
     this.shadow = this.attachShadow({ mode: 'open' });
+
+    // Initialize RAG client
+    this.ragClient = new RAGClient();
+
+    // Generate session ID (UUID v4)
+    this.sessionId = crypto.randomUUID();
   }
 
   connectedCallback() {
@@ -77,19 +86,62 @@ export class ChatKitWidget extends HTMLElement {
       }
     });
 
-    // Listen to own event and append message (local only)
+    // Listen to own event and send to backend
     this.addEventListener('chatkit:send', ((e: ChatKitSendEvent) => {
       this.appendMessage(e.detail.message, 'user');
-      // Static bot reply (no backend)
-      setTimeout(() => {
-        this.appendMessage("Thanks! I'll answer once connected.", 'assistant');
-      }, 500);
+      this.handleRAGQuery(e.detail.message);
     }) as EventListener);
   }
 
-  private appendMessage(content: string, role: 'user' | 'assistant'): void {
+  private async handleRAGQuery(message: string): Promise<void> {
+    // Show loading state
+    const loadingId = this.appendMessage('Thinking...', 'assistant', true);
+
+    try {
+      // Call RAG backend
+      const response = await this.ragClient.sendMessage({
+        message,
+        context: {
+          mode: 'browse',
+          session_id: this.sessionId,
+        },
+        tier: 'anonymous',
+      });
+
+      // Remove loading message
+      this.removeMessage(loadingId);
+
+      // Display answer
+      this.appendMessage(response.answer, 'assistant');
+
+    } catch (error) {
+      // Remove loading message
+      this.removeMessage(loadingId);
+
+      // Handle errors
+      if (error instanceof RAGClientError) {
+        this.appendMessage(this.getErrorMessage(error.code), 'assistant');
+      } else {
+        this.appendMessage('Sorry, something went wrong. Please try again.', 'assistant');
+      }
+    }
+  }
+
+  private getErrorMessage(errorCode: string): string {
+    const errorMessages: Record<string, string> = {
+      'INVALID_REQUEST': 'Your message appears to be invalid. Please try again.',
+      'MESSAGE_TOO_LONG': 'Your message is too long. Please keep it under 2000 characters.',
+      'RATE_LIMIT_EXCEEDED': 'Too many requests. Please wait a moment and try again.',
+      'NETWORK_ERROR': 'Unable to connect to the service. Please check your connection.',
+      'REQUEST_CANCELLED': 'Request was cancelled.',
+      'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again.',
+    };
+    return errorMessages[errorCode] || 'An error occurred. Please try again.';
+  }
+
+  private appendMessage(content: string, role: 'user' | 'assistant', isLoading: boolean = false): string {
     const messagesContainer = this.shadow.querySelector('.chatkit-messages');
-    if (!messagesContainer) return;
+    if (!messagesContainer) return '';
 
     // Remove placeholder on first message
     const placeholder = this.shadow.querySelector('.chatkit-placeholder');
@@ -99,7 +151,9 @@ export class ChatKitWidget extends HTMLElement {
 
     // Create message element
     const messageDiv = document.createElement('div');
-    messageDiv.className = `chatkit-message chatkit-message-${role}`;
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    messageDiv.id = messageId;
+    messageDiv.className = `chatkit-message chatkit-message-${role}${isLoading ? ' chatkit-message-loading' : ''}`;
     messageDiv.textContent = content;
 
     // Append to container
@@ -107,6 +161,15 @@ export class ChatKitWidget extends HTMLElement {
 
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    return messageId;
+  }
+
+  private removeMessage(messageId: string): void {
+    const message = this.shadow.getElementById(messageId);
+    if (message) {
+      message.remove();
+    }
   }
 }
 

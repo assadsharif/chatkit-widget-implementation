@@ -138,6 +138,12 @@ export function getStyles(): string {
       opacity: 0.8;
     }
 
+    /* Loading state */
+    .chatkit-message-loading {
+      opacity: 0.7;
+      font-style: italic;
+    }
+
     /* Responsive */
     @media (max-width: 640px) {
       .chatkit-container {
