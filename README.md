@@ -1,5 +1,9 @@
 # ChatKit Widget - Phase 7 Implementation
 
+![Implementation-Ready](https://img.shields.io/badge/Implementation-Ready-blue?style=flat-square)
+![Spec-Driven Architecture](https://img.shields.io/badge/Architecture-Spec--Driven-orange?style=flat-square)
+![Phase](https://img.shields.io/badge/Phase-7%20In%20Progress-yellow?style=flat-square)
+
 **Status**: 🚧 In Development (Phase 7)
 **Design Reference**: [Hackathon_01 v1.0-design-freeze](https://github.com/assadsharif/Hackathon_01/tree/v1.0-design-freeze)
 
