@@ -32,11 +32,9 @@ export interface SignupRequest {
   migrate_session?: boolean; // Optional: migrate anonymous session
 }
 
-// Signup response
+// Signup response (matches backend contract)
 export interface SignupResponse {
-  success: boolean;
-  message: string;
-  verification_sent: boolean;
+  status: 'verification_sent';
 }
 
 // Verification request
@@ -146,7 +144,7 @@ export class AuthClient {
       const data: SignupResponse = await response.json();
 
       // Update state
-      if (data.verification_sent) {
+      if (data.status === 'verification_sent') {
         this.currentState = 'EMAIL_VERIFICATION_PENDING';
       }
 

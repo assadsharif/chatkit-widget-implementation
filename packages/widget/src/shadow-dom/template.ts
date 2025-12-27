@@ -21,6 +21,14 @@ export function getTemplate(): string {
         </div>
       </div>
 
+      <!-- STEP 3.1: Soft Prompt (inline, non-modal, dismissible) -->
+      <div class="chatkit-soft-prompt" style="display: none;">
+        <div class="chatkit-soft-prompt-content">
+          <button class="chatkit-soft-prompt-close" aria-label="Dismiss">✕</button>
+          <p>💡 Want to save your chats? <a href="#" class="chatkit-soft-prompt-cta">Sign up</a> (it's quick!)</p>
+        </div>
+      </div>
+
       <div class="chatkit-input-area">
         <input
           type="text"
@@ -31,6 +39,43 @@ export function getTemplate(): string {
         <button class="chatkit-send-btn" aria-label="Send message">
           Send
         </button>
+      </div>
+    </div>
+
+    <!-- STEP 3.2: Signup Modal (email input, consent checkbox, cancel button) -->
+    <div class="chatkit-modal-overlay" style="display: none;">
+      <div class="chatkit-modal">
+        <div class="chatkit-modal-header">
+          <h3>Sign Up</h3>
+          <button class="chatkit-modal-close" aria-label="Close">✕</button>
+        </div>
+        <div class="chatkit-modal-body">
+          <p>Create an account to save your chats and unlock personalization.</p>
+
+          <label for="chatkit-email">Email</label>
+          <input
+            type="email"
+            id="chatkit-email"
+            class="chatkit-email-input"
+            placeholder="your@email.com"
+            aria-label="Email address"
+          />
+
+          <label class="chatkit-consent-label">
+            <input
+              type="checkbox"
+              id="chatkit-consent"
+              class="chatkit-consent-checkbox"
+            />
+            I consent to data storage (required)
+          </label>
+
+          <div class="chatkit-modal-error" style="display: none;"></div>
+        </div>
+        <div class="chatkit-modal-footer">
+          <button class="chatkit-modal-cancel">Cancel</button>
+          <button class="chatkit-modal-submit">Sign Up</button>
+        </div>
       </div>
     </div>
   `;

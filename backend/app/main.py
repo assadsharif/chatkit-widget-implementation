@@ -13,7 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 import time
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
+from datetime import datetime, timedelta
+import re
+import secrets
 
 app = FastAPI(title="ChatKit RAG API", version="0.1.0")
 
@@ -64,6 +67,148 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[Source]
     metadata: ResponseMetadata
+
+# Auth models (Phase 7C-B)
+class SignupRequest(BaseModel):
+    email: str
+    consent_data_storage: bool
+    migrate_session: bool | None = None
+
+class SignupResponse(BaseModel):
+    status: Literal["verification_sent"]
+
+class VerifyRequest(BaseModel):
+    token: str
+
+class UserProfile(BaseModel):
+    email: str
+    tier: Literal["lightweight"]
+
+class VerifyResponse(BaseModel):
+    session_token: str
+    user_profile: UserProfile
+
+# In-memory storage for verification tokens (mock)
+# Structure: { token: { email: str, expires_at: datetime } }
+verification_tokens: dict[str, dict] = {}
+
+# In-memory storage for sessions (mock)
+# Structure: { session_token: { email: str, tier: str } }
+sessions: dict[str, dict] = {}
+
+def is_valid_email(email: str) -> bool:
+    """Validate email format"""
+    pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    return re.match(pattern, email) is not None
+
+@app.post("/api/v1/auth/signup", response_model=SignupResponse)
+async def signup(request: SignupRequest):
+    """
+    STEP 1.2: Signup endpoint (MINIMAL, BORING, SAFE)
+
+    Input: { email, consent_data_storage, migrate_session? }
+
+    Validate:
+    - email format
+    - consent === true (hard fail)
+
+    Action:
+    - generate verification token (10 min TTL)
+    - send email (dummy console log for now)
+
+    Response:
+    - { "status": "verification_sent" }
+
+    NO: login, session creation, data migration
+    """
+    # Validate email format
+    if not is_valid_email(request.email):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "INVALID_EMAIL", "message": "Please enter a valid email address"}}
+        )
+
+    # Validate consent (GDPR requirement)
+    if not request.consent_data_storage:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "CONSENT_REQUIRED", "message": "You must consent to data storage to create an account"}}
+        )
+
+    # Generate verification token (10 min TTL)
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(minutes=10)
+
+    verification_tokens[token] = {
+        "email": request.email,
+        "expires_at": expires_at
+    }
+
+    # Send email (dummy console log for now)
+    print(f"📧 VERIFICATION EMAIL (mock)")
+    print(f"   To: {request.email}")
+    print(f"   Token: {token}")
+    print(f"   Expires: {expires_at}")
+    print(f"   Link: http://localhost:3000/verify?token={token}")
+
+    return SignupResponse(status="verification_sent")
+
+@app.post("/api/v1/auth/verify", response_model=VerifyResponse)
+async def verify(request: VerifyRequest):
+    """
+    STEP 1.3: Verify endpoint behavior
+
+    Input: { token }
+
+    Action:
+    - validate token
+    - create session token
+
+    Response:
+    - { "session_token": "...", "user_profile": { "email": "...", "tier": "lightweight" } }
+
+    NO: OAuth, personalization, feature unlocks
+    """
+    # Validate token exists
+    if request.token not in verification_tokens:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid or expired verification token"}}
+        )
+
+    token_data = verification_tokens[request.token]
+
+    # Check expiration
+    if datetime.now() > token_data["expires_at"]:
+        del verification_tokens[request.token]
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "TOKEN_EXPIRED", "message": "Verification token has expired"}}
+        )
+
+    # Create session token
+    session_token = secrets.token_urlsafe(32)
+    email = token_data["email"]
+
+    sessions[session_token] = {
+        "email": email,
+        "tier": "lightweight"
+    }
+
+    # Clean up verification token (one-time use)
+    del verification_tokens[request.token]
+
+    print(f"✅ SESSION CREATED (mock)")
+    print(f"   Email: {email}")
+    print(f"   Session Token: {session_token}")
+
+    return VerifyResponse(
+        session_token=session_token,
+        user_profile=UserProfile(
+            email=email,
+            tier="lightweight"
+        )
+    )
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
