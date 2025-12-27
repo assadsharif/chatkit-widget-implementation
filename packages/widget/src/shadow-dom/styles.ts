@@ -70,6 +70,30 @@ export function getStyles(): string {
       font-size: 14px;
     }
 
+    /* Message styling (Phase 7A-2) */
+    .chatkit-message {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 80%;
+      word-wrap: break-word;
+    }
+
+    .chatkit-message-user {
+      background: var(--chatkit-primary);
+      color: white;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .chatkit-message-assistant {
+      background: var(--chatkit-input-bg);
+      color: var(--chatkit-text);
+      margin-right: auto;
+    }
+
     .chatkit-input-area {
       display: flex;
       gap: 8px;
