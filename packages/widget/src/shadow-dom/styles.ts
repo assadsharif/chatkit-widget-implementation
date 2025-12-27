@@ -214,7 +214,8 @@ export function getStyles(): string {
     }
 
     .chatkit-save-chat-btn,
-    .chatkit-personalize-btn {
+    .chatkit-personalize-btn,
+    .chatkit-logout-btn {
       flex: 1;
       padding: 8px 16px;
       font-size: 13px;
@@ -227,14 +228,28 @@ export function getStyles(): string {
       color: var(--chatkit-text);
     }
 
+    .chatkit-logout-btn {
+      flex: 0 0 auto;
+      background: #fee2e2;
+      border-color: #fca5a5;
+      color: #991b1b;
+    }
+
     .chatkit-save-chat-btn:hover,
-    .chatkit-personalize-btn:hover {
+    .chatkit-personalize-btn:hover,
+    .chatkit-logout-btn:hover {
       background: #e5e7eb;
       border-color: var(--chatkit-primary);
     }
 
+    .chatkit-logout-btn:hover {
+      background: #fecaca;
+      border-color: #f87171;
+    }
+
     .chatkit-save-chat-btn:active,
-    .chatkit-personalize-btn:active {
+    .chatkit-personalize-btn:active,
+    .chatkit-logout-btn:active {
       transform: scale(0.98);
     }
 

@@ -37,6 +37,9 @@ export function getTemplate(): string {
         <button class="chatkit-personalize-btn" aria-label="Personalize content" title="Get personalized recommendations">
           ✨ Personalize
         </button>
+        <button class="chatkit-logout-btn" aria-label="Logout" title="Sign out">
+          🚪 Logout
+        </button>
       </div>
 
       <div class="chatkit-input-area">

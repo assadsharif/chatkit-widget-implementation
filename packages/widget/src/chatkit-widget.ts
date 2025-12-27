@@ -21,6 +21,7 @@ export class ChatKitWidget extends HTMLElement {
   private authClient: AuthClient;
   private sessionId: string;
   private questionCount: number = 0;
+  private messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   constructor() {
     super();
@@ -213,8 +214,9 @@ export class ChatKitWidget extends HTMLElement {
   private wireActionBar(): void {
     const saveChatBtn = this.shadow.querySelector('.chatkit-save-chat-btn') as HTMLButtonElement;
     const personalizeBtn = this.shadow.querySelector('.chatkit-personalize-btn') as HTMLButtonElement;
+    const logoutBtn = this.shadow.querySelector('.chatkit-logout-btn') as HTMLButtonElement;
 
-    if (!saveChatBtn || !personalizeBtn) return;
+    if (!saveChatBtn || !personalizeBtn || !logoutBtn) return;
 
     // Wire Save Chat button
     saveChatBtn.addEventListener('click', () => {
@@ -225,13 +227,53 @@ export class ChatKitWidget extends HTMLElement {
     personalizeBtn.addEventListener('click', () => {
       this.handlePersonalize();
     });
+
+    // Phase 8: Wire Logout button
+    logoutBtn.addEventListener('click', async () => {
+      await this.handleLogout();
+    });
   }
 
-  private handleSaveChat(): void {
-    // Phase 7C-C: Session-aware Save Chat trigger
+  private async handleLogout(): Promise<void> {
+    // Phase 8: Logout functionality
+    await this.authClient.logout();
+    this.hideActionBar();
+    this.appendMessage('👋 You have been logged out. Chat remains available anonymously.', 'assistant');
+  }
+
+  private async handleSaveChat(): Promise<void> {
+    // Phase 8: Real Save Chat with API call
     if (this.authClient.isAuthenticated()) {
-      // User is authenticated - perform save action
-      this.appendMessage('💾 Chat saved! (Mock - will implement in Phase 8)', 'assistant');
+      // User is authenticated - call save API
+      const loadingId = this.appendMessage('Saving chat...', 'assistant', true);
+
+      try {
+        const token = this.authClient.getSessionToken();
+        const response = await fetch('http://localhost:8000/api/v1/chat/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            messages: this.messages,
+            title: `Chat ${new Date().toLocaleString()}`,
+          }),
+        });
+
+        this.removeMessage(loadingId);
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error?.message || 'Failed to save chat');
+        }
+
+        const data = await response.json();
+        this.appendMessage(`💾 Chat saved successfully! (ID: ${data.chat_id})`, 'assistant');
+      } catch (error: any) {
+        this.removeMessage(loadingId);
+        this.appendMessage(`❌ Error saving chat: ${error.message}`, 'assistant');
+      }
     } else {
       // User not authenticated - open signup modal
       this.authClient.openSignupModal();
@@ -239,11 +281,41 @@ export class ChatKitWidget extends HTMLElement {
     }
   }
 
-  private handlePersonalize(): void {
-    // Phase 7C-C: Session-aware Personalize trigger
+  private async handlePersonalize(): Promise<void> {
+    // Phase 8: Real Personalize with API call
     if (this.authClient.isAuthenticated()) {
-      // User is authenticated - perform personalize action
-      this.appendMessage('✨ Personalization activated! (Mock - will implement in Phase 8)', 'assistant');
+      // User is authenticated - call personalize API
+      const loadingId = this.appendMessage('Personalizing content...', 'assistant', true);
+
+      try {
+        const token = this.authClient.getSessionToken();
+        const response = await fetch('http://localhost:8000/api/v1/user/personalize', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            preferences: {},
+          }),
+        });
+
+        this.removeMessage(loadingId);
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error?.message || 'Failed to personalize');
+        }
+
+        const data = await response.json();
+
+        // Show recommendations
+        const recsText = `✨ Personalized recommendations:\n${data.recommendations.map((r: string) => `• ${r}`).join('\n')}`;
+        this.appendMessage(recsText, 'assistant');
+      } catch (error: any) {
+        this.removeMessage(loadingId);
+        this.appendMessage(`❌ Error personalizing: ${error.message}`, 'assistant');
+      }
     } else {
       // User not authenticated - open signup modal
       this.authClient.openSignupModal();
@@ -404,6 +476,11 @@ export class ChatKitWidget extends HTMLElement {
 
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Phase 8: Track messages for saving (skip loading messages)
+    if (!isLoading) {
+      this.messages.push({ role, content });
+    }
 
     return messageId;
   }

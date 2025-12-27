@@ -88,18 +88,118 @@ class VerifyResponse(BaseModel):
     session_token: str
     user_profile: UserProfile
 
+# Phase 8 models
+class SaveChatRequest(BaseModel):
+    messages: list[dict]  # [{role: str, content: str}]
+    title: str | None = None
+
+class SaveChatResponse(BaseModel):
+    chat_id: str
+    saved_at: str
+
+class PersonalizeRequest(BaseModel):
+    preferences: dict | None = None
+
+class PersonalizeResponse(BaseModel):
+    recommendations: list[str]
+    personalized_content: dict
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+class ResendVerificationResponse(BaseModel):
+    status: Literal["verification_sent"]
+
 # In-memory storage for verification tokens (mock)
 # Structure: { token: { email: str, expires_at: datetime } }
 verification_tokens: dict[str, dict] = {}
 
 # In-memory storage for sessions (mock)
-# Structure: { session_token: { email: str, tier: str } }
+# Structure: { session_token: { email: str, tier: str, created_at: datetime } }
 sessions: dict[str, dict] = {}
+
+# In-memory storage for saved chats (Phase 8)
+# Structure: { chat_id: { user_email: str, messages: list, saved_at: datetime, title: str } }
+saved_chats: dict[str, dict] = {}
+
+# Rate limiting storage (Phase 8)
+# Structure: { session_token: { chat_count: int, save_count: int, last_reset: datetime } }
+rate_limits: dict[str, dict] = {}
 
 def is_valid_email(email: str) -> bool:
     """Validate email format"""
     pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
     return re.match(pattern, email) is not None
+
+def validate_token(authorization: str | None) -> str:
+    """
+    Phase 8: Validate authorization header and extract token
+    Raises HTTPException if invalid
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "UNAUTHORIZED", "message": "Authorization header required"}}
+        )
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid authorization format"}}
+        )
+
+    token = authorization[7:]  # Remove "Bearer " prefix
+
+    if token not in sessions:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "SESSION_EXPIRED", "message": "Session has expired or is invalid"}}
+        )
+
+    return token
+
+def check_rate_limit(token: str, action: str) -> None:
+    """
+    Phase 8: Check rate limits for actions
+
+    Limits:
+    - chat: 10 per minute
+    - save: 5 per minute
+    - personalize: 5 per minute
+    """
+    now = datetime.now()
+
+    if token not in rate_limits:
+        rate_limits[token] = {
+            "chat_count": 0,
+            "save_count": 0,
+            "personalize_count": 0,
+            "last_reset": now
+        }
+
+    limits = rate_limits[token]
+
+    # Reset counters every minute
+    if (now - limits["last_reset"]).total_seconds() > 60:
+        limits["chat_count"] = 0
+        limits["save_count"] = 0
+        limits["personalize_count"] = 0
+        limits["last_reset"] = now
+
+    # Check limits
+    if action == "chat" and limits["chat_count"] >= 10:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many chat requests. Please wait a moment."}}
+        )
+    elif action in ["save", "personalize"] and limits[f"{action}_count"] >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": f"Too many {action} requests. Please wait a moment."}}
+        )
+
+    # Increment counter
+    limits[f"{action}_count"] += 1
 
 @app.post("/api/v1/auth/signup", response_model=SignupResponse)
 async def signup(request: SignupRequest):
@@ -256,6 +356,120 @@ async def session_check(authorization: str = Header(None)):
             tier=session_data["tier"]
         )
     }
+
+@app.post("/api/v1/chat/save", response_model=SaveChatResponse)
+async def save_chat(request: SaveChatRequest, authorization: str = Header(None)):
+    """
+    Phase 8: Save chat for authenticated user
+
+    Input: Authorization header + messages list
+    Output: { chat_id, saved_at }
+
+    Rate limit: 5 saves per minute
+    """
+    # Validate token
+    token = validate_token(authorization)
+
+    # Check rate limit
+    check_rate_limit(token, "save")
+
+    session_data = sessions[token]
+
+    # Generate chat ID
+    chat_id = secrets.token_urlsafe(16)
+
+    # Save chat
+    saved_chats[chat_id] = {
+        "user_email": session_data["email"],
+        "messages": request.messages,
+        "saved_at": datetime.now(),
+        "title": request.title or f"Chat {len(saved_chats) + 1}"
+    }
+
+    print(f"💾 CHAT SAVED (mock)")
+    print(f"   Chat ID: {chat_id}")
+    print(f"   User: {session_data['email']}")
+    print(f"   Messages: {len(request.messages)}")
+
+    return SaveChatResponse(
+        chat_id=chat_id,
+        saved_at=datetime.now().isoformat()
+    )
+
+@app.post("/api/v1/user/personalize", response_model=PersonalizeResponse)
+async def personalize(request: PersonalizeRequest, authorization: str = Header(None)):
+    """
+    Phase 8: Generate personalized recommendations
+
+    Input: Authorization header + optional preferences
+    Output: { recommendations, personalized_content }
+
+    Rate limit: 5 personalize actions per minute
+    """
+    # Validate token
+    token = validate_token(authorization)
+
+    # Check rate limit
+    check_rate_limit(token, "personalize")
+
+    session_data = sessions[token]
+
+    # Mock personalization (in real app, use ML/AI)
+    recommendations = [
+        "Chapter 3: Advanced Robotics Concepts",
+        "Tutorial: Building Your First Humanoid",
+        "Video: Understanding Sensor Fusion"
+    ]
+
+    personalized_content = {
+        "difficulty_level": "intermediate",
+        "learning_path": ["basics", "sensors", "control", "advanced"],
+        "next_chapter": "perception-action-loops"
+    }
+
+    print(f"✨ PERSONALIZATION ACTIVATED (mock)")
+    print(f"   User: {session_data['email']}")
+    print(f"   Preferences: {request.preferences}")
+
+    return PersonalizeResponse(
+        recommendations=recommendations,
+        personalized_content=personalized_content
+    )
+
+@app.post("/api/v1/auth/resend-verification", response_model=ResendVerificationResponse)
+async def resend_verification(request: ResendVerificationRequest):
+    """
+    Phase 8: Resend email verification link
+
+    Input: { email }
+    Output: { status: "verification_sent" }
+
+    No rate limit (handled by email provider)
+    """
+    # Validate email
+    if not is_valid_email(request.email):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "INVALID_EMAIL", "message": "Please enter a valid email address"}}
+        )
+
+    # Generate new verification token (10 min TTL)
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(minutes=10)
+
+    verification_tokens[token] = {
+        "email": request.email,
+        "expires_at": expires_at
+    }
+
+    # Send email (dummy console log)
+    print(f"📧 VERIFICATION EMAIL RESENT (mock)")
+    print(f"   To: {request.email}")
+    print(f"   Token: {token}")
+    print(f"   Expires: {expires_at}")
+    print(f"   Link: http://localhost:3000/verify?token={token}")
+
+    return ResendVerificationResponse(status="verification_sent")
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
