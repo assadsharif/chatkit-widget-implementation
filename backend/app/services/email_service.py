@@ -1,14 +1,16 @@
 """
-Email Service - Phase 10
+Email Service - Phase 11A
 
 SMTP integration for sending verification emails.
 Currently using console logging (mock).
 
+Phase 11A: Respects EMAIL_ENABLED config (disabled in integration test mode).
 Production: Update with real SMTP credentials.
 """
 
 import os
 from typing import Optional
+from app import config
 
 class EmailService:
     """Email sending service"""
@@ -20,6 +22,7 @@ class EmailService:
         self.smtp_password = os.getenv("SMTP_PASSWORD", "")
         self.from_email = os.getenv("FROM_EMAIL", "noreply@chatkit.com")
         self.base_url = os.getenv("BASE_URL", "http://localhost:3000")
+        self.email_enabled = config.EMAIL_ENABLED
 
     async def send_verification_email(self, to_email: str, token: str) -> bool:
         """
@@ -49,6 +52,11 @@ class EmailService:
         </body>
         </html>
         """
+
+        # Phase 11A: Skip email sending in integration test mode
+        if not self.email_enabled:
+            print(f"🧪 EMAIL SKIPPED (Integration Test Mode) - Token: {token}")
+            return True
 
         # Console log (mock)
         print("=" * 80)

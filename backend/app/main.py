@@ -1,8 +1,9 @@
 """
-FastAPI Backend - Phase 10 (Database-Backed)
+FastAPI Backend - Phase 11 (Integration & Hardening)
 
 Clean orchestration layer with database persistence.
 All business logic delegated to services.
+Phase 11A: Integration test mode support.
 """
 
 from fastapi import FastAPI, HTTPException, Header, Depends
@@ -14,6 +15,9 @@ from datetime import datetime, timedelta
 import secrets
 import re
 
+# Configuration (Phase 11A)
+from app import config
+
 # Database and models
 from app.database import engine, get_db, Base
 from app.models import User, Session as DBSession, VerificationToken, SavedChat, AnonymousSession, AnalyticsEvent
@@ -21,12 +25,15 @@ from app.models import User, Session as DBSession, VerificationToken, SavedChat,
 # Services
 from app.services import email_service, personalize_service, analytics_service
 
-app = FastAPI(title="ChatKit API", version="0.2.0")
+# Test fixtures (Phase 11A)
+from app import test_fixtures
 
-# CORS
+app = FastAPI(title="ChatKit API", version="0.3.0-dev")
+
+# CORS (Phase 11C: CORS lockdown)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ORIGINS,  # Explicit allowlist (not *)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,6 +46,30 @@ async def startup():
     """Initialize database on startup"""
     Base.metadata.create_all(bind=engine)
     print("✅ Database initialized")
+
+    # Phase 11A: Integration test mode diagnostics
+    if config.INTEGRATION_TEST_MODE:
+        print("🧪 INTEGRATION TEST MODE ENABLED")
+        print(f"   Rate limit window: {config.RATE_LIMIT_WINDOW_SECONDS}s")
+        print(f"   Email disabled: {not config.EMAIL_ENABLED}")
+        print(f"   CORS origins: {config.CORS_ORIGINS}")
+
+        # Clear analytics table for fresh test runs
+        db = next(get_db())
+        try:
+            db.query(AnalyticsEvent).delete()
+            db.commit()
+            print("   ✅ Analytics table cleared for testing")
+        except Exception as e:
+            print(f"   ⚠️  Failed to clear analytics: {e}")
+        finally:
+            db.close()
+
+        # Setup deterministic test fixtures
+        test_fixtures.setup_integration_test_fixtures()
+    else:
+        diagnostics = config.get_integration_test_diagnostics()
+        print(f"🚀 Production mode: {diagnostics}")
 
 # ===== Pydantic Models (API Contracts) =====
 

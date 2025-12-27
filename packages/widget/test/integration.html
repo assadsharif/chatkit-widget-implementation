@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatKit Widget - Integration Test Harness</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .test-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .test-panel h2 {
+            color: #333;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.danger {
+            background: #e53e3e;
+        }
+
+        button.danger:hover {
+            background: #c53030;
+        }
+
+        button.success {
+            background: #38a169;
+        }
+
+        button.success:hover {
+            background: #2f855a;
+        }
+
+        .status {
+            background: #f7fafc;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 4px;
+        }
+
+        .status h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .status-item span:last-child {
+            font-weight: 600;
+        }
+
+        .widget-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .console-log {
+            background: #1a202c;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        .console-log p {
+            margin: 3px 0;
+        }
+
+        .passed {
+            color: #38a169;
+        }
+
+        .failed {
+            color: #e53e3e;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 ChatKit Widget - Integration Test Harness</h1>
+        <p><strong>Phase 11A:</strong> Live Integration Tests</p>
+        <p><strong>Backend:</strong> localhost:8000 (INTEGRATION_TEST_MODE=true)</p>
+        <p><strong>Widget:</strong> chatkit-widget.js (compiled build)</p>
+    </div>
+
+    <div class="test-panel">
+        <h2>Manual Integration Tests</h2>
+
+        <div class="button-group">
+            <button onclick="testSendMessage()">📤 Send Message</button>
+            <button onclick="testSaveChat()" class="success">💾 Save Chat</button>
+            <button onclick="testPersonalize()" class="success">⚡ Personalize</button>
+            <button onclick="testRateLimit()" class="danger">⏱️ Trigger Rate Limit</button>
+            <button onclick="testLogout()" class="danger">🚪 Logout</button>
+            <button onclick="testReload()">🔄 Reload Page</button>
+        </div>
+
+        <div class="button-group">
+            <button onclick="checkWidgetLoaded()">✅ Check Widget Loaded</button>
+            <button onclick="checkSession()">🔐 Check Session</button>
+            <button onclick="checkAnalytics()">📊 Check Analytics</button>
+            <button onclick="runAllTests()" class="success">▶️ Run All Tests</button>
+        </div>
+
+        <div class="status">
+            <h3>Test Status</h3>
+            <div id="test-status">
+                <div class="status-item">
+                    <span>Widget Loaded:</span>
+                    <span id="status-widget">Checking...</span>
+                </div>
+                <div class="status-item">
+                    <span>Backend Connectivity:</span>
+                    <span id="status-backend">Checking...</span>
+                </div>
+                <div class="status-item">
+                    <span>Session Valid:</span>
+                    <span id="status-session">Checking...</span>
+                </div>
+                <div class="status-item">
+                    <span>Analytics Working:</span>
+                    <span id="status-analytics">Checking...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="console-log" id="console-log">
+            <p>📋 Console output will appear here...</p>
+        </div>
+    </div>
+
+    <!-- Widget Container -->
+    <div class="widget-container">
+        <chatkit-widget></chatkit-widget>
+    </div>
+
+    <!-- Load the compiled widget -->
+    <script type="module" src="../dist/chatkit-widget.js"></script>
+
+    <!-- Integration Test Scripts -->
+    <script>
+        // Console logging
+        function log(message, type = 'info') {
+            const consoleLog = document.getElementById('console-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const colorClass = type === 'pass' ? 'passed' : type === 'fail' ? 'failed' : '';
+            consoleLog.innerHTML += `<p class="${colorClass}">[${timestamp}] ${message}</p>`;
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+
+        // Update status
+        function updateStatus(key, value, passed = true) {
+            const statusEl = document.getElementById(`status-${key}`);
+            if (statusEl) {
+                statusEl.textContent = value;
+                statusEl.className = passed ? 'passed' : 'failed';
+            }
+        }
+
+        // Test: Check widget loaded
+        function checkWidgetLoaded() {
+            log('Checking if widget loaded...');
+            const widget = document.querySelector('chatkit-widget');
+            if (widget) {
+                log('✅ Widget element found in DOM', 'pass');
+                updateStatus('widget', 'Loaded', true);
+                return true;
+            } else {
+                log('❌ Widget element NOT found', 'fail');
+                updateStatus('widget', 'Not Found', false);
+                return false;
+            }
+        }
+
+        // Test: Send message
+        function testSendMessage() {
+            log('Test: Sending message...');
+            const widget = document.querySelector('chatkit-widget');
+            if (!widget || !widget.shadowRoot) {
+                log('❌ Widget not ready', 'fail');
+                return;
+            }
+
+            const input = widget.shadowRoot.querySelector('.chatkit-input');
+            const sendBtn = widget.shadowRoot.querySelector('.chatkit-send-btn');
+
+            if (input && sendBtn) {
+                input.value = `Test message at ${new Date().toLocaleTimeString()}`;
+                sendBtn.click();
+                log('✅ Message sent successfully', 'pass');
+            } else {
+                log('❌ Input or send button not found', 'fail');
+            }
+        }
+
+        // Test: Save chat
+        function testSaveChat() {
+            log('Test: Saving chat...');
+            const widget = document.querySelector('chatkit-widget');
+            if (!widget || !widget.shadowRoot) {
+                log('❌ Widget not ready', 'fail');
+                return;
+            }
+
+            const saveBtn = widget.shadowRoot.querySelector('.chatkit-save-chat-btn');
+            if (saveBtn) {
+                saveBtn.click();
+                log('✅ Save chat button clicked', 'pass');
+            } else {
+                log('❌ Save chat button not found', 'fail');
+            }
+        }
+
+        // Test: Personalize
+        function testPersonalize() {
+            log('Test: Triggering personalization...');
+            const widget = document.querySelector('chatkit-widget');
+            if (!widget || !widget.shadowRoot) {
+                log('❌ Widget not ready', 'fail');
+                return;
+            }
+
+            const personalizeBtn = widget.shadowRoot.querySelector('.chatkit-personalize-btn');
+            if (personalizeBtn) {
+                personalizeBtn.click();
+                log('✅ Personalize button clicked', 'pass');
+            } else {
+                log('❌ Personalize button not found', 'fail');
+            }
+        }
+
+        // Test: Trigger rate limit
+        function testRateLimit() {
+            log('Test: Triggering rate limit (spam clicking)...');
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => testSaveChat(), i * 100);
+            }
+            log('⚠️ Sent 10 rapid save requests - check for rate limit toast', 'info');
+        }
+
+        // Test: Logout
+        function testLogout() {
+            log('Test: Logging out...');
+            const widget = document.querySelector('chatkit-widget');
+            if (!widget || !widget.shadowRoot) {
+                log('❌ Widget not ready', 'fail');
+                return;
+            }
+
+            const logoutBtn = widget.shadowRoot.querySelector('.chatkit-logout-btn');
+            if (logoutBtn) {
+                logoutBtn.click();
+                log('✅ Logout button clicked', 'pass');
+            } else {
+                log('❌ Logout button not found', 'fail');
+            }
+        }
+
+        // Test: Reload page
+        function testReload() {
+            log('Test: Reloading page (testing session persistence)...');
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        }
+
+        // Test: Check session
+        async function checkSession() {
+            log('Checking session validity...');
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/auth/session-check', {
+                    headers: {
+                        'Authorization': `Bearer integration-test-session-token-12345`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ Session valid: ${data.user.email}`, 'pass');
+                    updateStatus('session', 'Valid', true);
+                } else {
+                    log('❌ Session invalid', 'fail');
+                    updateStatus('session', 'Invalid', false);
+                }
+            } catch (error) {
+                log(`❌ Session check failed: ${error.message}`, 'fail');
+                updateStatus('session', 'Error', false);
+            }
+        }
+
+        // Test: Check analytics
+        async function checkAnalytics() {
+            log('Checking backend connectivity...');
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/analytics/event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        event_type: 'integration_test',
+                        event_data: { timestamp: Date.now() }
+                    })
+                });
+
+                if (response.ok) {
+                    log('✅ Backend connectivity OK', 'pass');
+                    updateStatus('backend', 'Connected', true);
+                    updateStatus('analytics', 'Working', true);
+                } else {
+                    log('❌ Backend connectivity failed', 'fail');
+                    updateStatus('backend', 'Disconnected', false);
+                }
+            } catch (error) {
+                log(`❌ Backend connectivity error: ${error.message}`, 'fail');
+                updateStatus('backend', 'Error', false);
+            }
+        }
+
+        // Run all tests
+        async function runAllTests() {
+            log('=== Running all integration tests ===', 'info');
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+            checkWidgetLoaded();
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await checkSession();
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+            await checkAnalytics();
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+            testSendMessage();
+
+            log('=== All automated tests complete ===', 'info');
+            log('ℹ️  Run manual tests as needed', 'info');
+        }
+
+        // Initial checks on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                log('🚀 Integration Test Harness Loaded');
+                runAllTests();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
