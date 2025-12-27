@@ -29,6 +29,16 @@ export function getTemplate(): string {
         </div>
       </div>
 
+      <!-- Phase 7C-C: Save Chat & Personalize Action Bar -->
+      <div class="chatkit-action-bar" style="display: none;">
+        <button class="chatkit-save-chat-btn" aria-label="Save this chat" title="Save this conversation">
+          💾 Save Chat
+        </button>
+        <button class="chatkit-personalize-btn" aria-label="Personalize content" title="Get personalized recommendations">
+          ✨ Personalize
+        </button>
+      </div>
+
       <div class="chatkit-input-area">
         <input
           type="text"

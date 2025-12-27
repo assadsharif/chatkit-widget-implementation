@@ -269,6 +269,66 @@ export class AuthClient {
   }
 
   /**
+   * Check if user is authenticated (alias for isLoggedIn)
+   * Phase 7C-C: Used by Save Chat / Personalize triggers
+   */
+  isAuthenticated(): boolean {
+    return this.isLoggedIn();
+  }
+
+  /**
+   * Get current session info
+   * Phase 7C-C: Used by widget to display session-aware UI
+   */
+  getSession(): { token: string; profile: UserProfile } | null {
+    if (this.sessionToken && this.userProfile) {
+      return {
+        token: this.sessionToken,
+        profile: this.userProfile,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Check session validity with backend
+   * Phase 7C-C: Auto-detect session on widget load
+   */
+  async checkSession(): Promise<boolean> {
+    if (!this.sessionToken) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}/api/v1/auth/session-check`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.sessionToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        // Session invalid - clear it
+        await this.logout();
+        return false;
+      }
+
+      const data = await response.json();
+
+      // Update profile if backend returns it
+      if (data.user) {
+        this.userProfile = data.user;
+        this.saveSessionToStorage();
+      }
+
+      return true;
+    } catch (error) {
+      // Network error - keep session but mark as unverified
+      return false;
+    }
+  }
+
+  /**
    * Validate email format
    */
   private isValidEmail(email: string): boolean {

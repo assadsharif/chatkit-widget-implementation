@@ -8,7 +8,7 @@ ONLY wiring
 Mock response matches specs/phase-7b/rag-api.contract.md
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 import time
@@ -209,6 +209,53 @@ async def verify(request: VerifyRequest):
             tier="lightweight"
         )
     )
+
+@app.get("/api/v1/auth/session-check")
+async def session_check(authorization: str = Header(None)):
+    """
+    Phase 7C-C: Session validity check
+
+    Input: Authorization header with Bearer token
+    Output: Session status + user profile
+
+    Used by widget to auto-detect authenticated users on load.
+    """
+    # Check authorization header
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "UNAUTHORIZED", "message": "Authorization header required"}}
+        )
+
+    # Extract token from "Bearer <token>"
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid authorization format"}}
+        )
+
+    token = authorization[7:]  # Remove "Bearer " prefix
+
+    # Check if session exists
+    if token not in sessions:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"code": "SESSION_EXPIRED", "message": "Session has expired or is invalid"}}
+        )
+
+    session_data = sessions[token]
+
+    print(f"✅ SESSION VALID (mock)")
+    print(f"   Email: {session_data['email']}")
+    print(f"   Token: {token}")
+
+    return {
+        "valid": True,
+        "user": UserProfile(
+            email=session_data["email"],
+            tier=session_data["tier"]
+        )
+    }
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):

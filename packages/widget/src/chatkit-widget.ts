@@ -41,6 +41,32 @@ export class ChatKitWidget extends HTMLElement {
     // Called when element is added to DOM
     this.render();
     this.wireEvents();
+    this.initSession();
+  }
+
+  private async initSession(): Promise<void> {
+    // Phase 7C-C: Auto-detect session on widget load
+    // Check if session exists in storage and validate with backend
+    const isValid = await this.authClient.checkSession();
+
+    if (isValid) {
+      // Show action bar for authenticated users
+      this.showActionBar();
+    }
+  }
+
+  private showActionBar(): void {
+    const actionBar = this.shadow.querySelector('.chatkit-action-bar') as HTMLElement;
+    if (actionBar) {
+      actionBar.style.display = 'flex';
+    }
+  }
+
+  private hideActionBar(): void {
+    const actionBar = this.shadow.querySelector('.chatkit-action-bar') as HTMLElement;
+    if (actionBar) {
+      actionBar.style.display = 'none';
+    }
   }
 
   disconnectedCallback() {
@@ -112,6 +138,7 @@ export class ChatKitWidget extends HTMLElement {
     // STEP 3: Wire auth UI components
     this.wireSoftPrompt();
     this.wireSignupModal();
+    this.wireActionBar();
   }
 
   private wireSoftPrompt(): void {
@@ -181,6 +208,47 @@ export class ChatKitWidget extends HTMLElement {
         this.clearSignupForm();
       }
     });
+  }
+
+  private wireActionBar(): void {
+    const saveChatBtn = this.shadow.querySelector('.chatkit-save-chat-btn') as HTMLButtonElement;
+    const personalizeBtn = this.shadow.querySelector('.chatkit-personalize-btn') as HTMLButtonElement;
+
+    if (!saveChatBtn || !personalizeBtn) return;
+
+    // Wire Save Chat button
+    saveChatBtn.addEventListener('click', () => {
+      this.handleSaveChat();
+    });
+
+    // Wire Personalize button
+    personalizeBtn.addEventListener('click', () => {
+      this.handlePersonalize();
+    });
+  }
+
+  private handleSaveChat(): void {
+    // Phase 7C-C: Session-aware Save Chat trigger
+    if (this.authClient.isAuthenticated()) {
+      // User is authenticated - perform save action
+      this.appendMessage('💾 Chat saved! (Mock - will implement in Phase 8)', 'assistant');
+    } else {
+      // User not authenticated - open signup modal
+      this.authClient.openSignupModal();
+      this.showSignupModal();
+    }
+  }
+
+  private handlePersonalize(): void {
+    // Phase 7C-C: Session-aware Personalize trigger
+    if (this.authClient.isAuthenticated()) {
+      // User is authenticated - perform personalize action
+      this.appendMessage('✨ Personalization activated! (Mock - will implement in Phase 8)', 'assistant');
+    } else {
+      // User not authenticated - open signup modal
+      this.authClient.openSignupModal();
+      this.showSignupModal();
+    }
   }
 
   private async handleSignup(

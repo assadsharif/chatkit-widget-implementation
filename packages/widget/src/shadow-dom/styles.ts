@@ -204,6 +204,40 @@ export function getStyles(): string {
       background: rgba(0, 0, 0, 0.1);
     }
 
+    /* Phase 7C-C: Action Bar (Save Chat & Personalize) */
+    .chatkit-action-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--chatkit-border);
+      background: var(--chatkit-bg);
+    }
+
+    .chatkit-save-chat-btn,
+    .chatkit-personalize-btn {
+      flex: 1;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--chatkit-border);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--chatkit-input-bg);
+      color: var(--chatkit-text);
+    }
+
+    .chatkit-save-chat-btn:hover,
+    .chatkit-personalize-btn:hover {
+      background: #e5e7eb;
+      border-color: var(--chatkit-primary);
+    }
+
+    .chatkit-save-chat-btn:active,
+    .chatkit-personalize-btn:active {
+      transform: scale(0.98);
+    }
+
     /* STEP 3.2: Signup Modal */
     .chatkit-modal-overlay {
       position: fixed;
