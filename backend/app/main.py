@@ -1,78 +1,51 @@
 """
-FastAPI Backend - Phase 7B Mock
+FastAPI Backend - Phase 10 (Database-Backed)
 
-NO vector DB
-NO LLM
-ONLY wiring
-
-Mock response matches specs/phase-7b/rag-api.contract.md
+Clean orchestration layer with database persistence.
+All business logic delegated to services.
 """
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
-import time
-from typing import Literal
-from uuid import UUID, uuid4
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from typing import Literal, Optional
 from datetime import datetime, timedelta
-import re
 import secrets
+import re
 
-app = FastAPI(title="ChatKit RAG API", version="0.1.0")
+# Database and models
+from app.database import engine, get_db, Base
+from app.models import User, Session as DBSession, VerificationToken, SavedChat, AnonymousSession, AnalyticsEvent
 
-# CORS for local development (widget → backend)
+# Services
+from app.services import email_service, personalize_service, analytics_service
+
+app = FastAPI(title="ChatKit API", version="0.2.0")
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Restrict in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Request models (from contract)
-class ChatContext(BaseModel):
-    mode: Literal["browse", "chat"]
-    selected_text: str | None = None
-    page_url: str | None = None
-    session_id: UUID
+# ===== Startup/Shutdown =====
 
-class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=2000)
-    context: ChatContext
-    tier: Literal["anonymous", "lightweight", "full", "premium"]
+@app.on_event("startup")
+async def startup():
+    """Initialize database on startup"""
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database initialized")
 
-    @field_validator("message")
-    @classmethod
-    def message_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("Message cannot be empty")
-        return v.strip()
+# ===== Pydantic Models (API Contracts) =====
 
-# Response models (from contract)
-class Source(BaseModel):
-    id: str
-    title: str
-    url: str
-    excerpt: str
-    score: float
-
-class ResponseMetadata(BaseModel):
-    model: str
-    tokens_used: int
-    retrieval_time_ms: int
-    generation_time_ms: int
-    total_time_ms: int
-
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list[Source]
-    metadata: ResponseMetadata
-
-# Auth models (Phase 7C-B)
 class SignupRequest(BaseModel):
     email: str
     consent_data_storage: bool
-    migrate_session: bool | None = None
+    migrate_session: Optional[bool] = None
 
 class SignupResponse(BaseModel):
     status: Literal["verification_sent"]
@@ -82,23 +55,22 @@ class VerifyRequest(BaseModel):
 
 class UserProfile(BaseModel):
     email: str
-    tier: Literal["lightweight"]
+    tier: str
 
 class VerifyResponse(BaseModel):
     session_token: str
     user_profile: UserProfile
 
-# Phase 8 models
 class SaveChatRequest(BaseModel):
-    messages: list[dict]  # [{role: str, content: str}]
-    title: str | None = None
+    messages: list[dict]
+    title: Optional[str] = None
 
 class SaveChatResponse(BaseModel):
     chat_id: str
     saved_at: str
 
 class PersonalizeRequest(BaseModel):
-    preferences: dict | None = None
+    preferences: Optional[dict] = None
 
 class PersonalizeResponse(BaseModel):
     recommendations: list[str]
@@ -110,363 +82,52 @@ class ResendVerificationRequest(BaseModel):
 class ResendVerificationResponse(BaseModel):
     status: Literal["verification_sent"]
 
-# In-memory storage for verification tokens (mock)
-# Structure: { token: { email: str, expires_at: datetime } }
-verification_tokens: dict[str, dict] = {}
+class MigrateSessionRequest(BaseModel):
+    anon_id: str
 
-# In-memory storage for sessions (mock)
-# Structure: { session_token: { email: str, tier: str, created_at: datetime } }
-sessions: dict[str, dict] = {}
+class MigrateSessionResponse(BaseModel):
+    migrated_messages: int
 
-# In-memory storage for saved chats (Phase 8)
-# Structure: { chat_id: { user_email: str, messages: list, saved_at: datetime, title: str } }
-saved_chats: dict[str, dict] = {}
+class AnalyticsEventRequest(BaseModel):
+    event_type: str
+    event_data: Optional[dict] = None
 
-# Rate limiting storage (Phase 8)
-# Structure: { session_token: { chat_count: int, save_count: int, last_reset: datetime } }
-rate_limits: dict[str, dict] = {}
+class AnalyticsEventResponse(BaseModel):
+    event_id: int
+    logged_at: str
 
-# Anonymous session storage (Phase 9)
-# Structure: { anon_id: { messages: list, created_at: datetime } }
-anonymous_sessions: dict[str, dict] = {}
-
-# User data storage (Phase 9)
-# Structure: { email: { email_verified: bool, tier: str } }
-users: dict[str, dict] = {}
+# ===== Helper Functions =====
 
 def is_valid_email(email: str) -> bool:
     """Validate email format"""
     pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
     return re.match(pattern, email) is not None
 
-def validate_token(authorization: str | None) -> str:
-    """
-    Phase 8: Validate authorization header and extract token
-    Raises HTTPException if invalid
-    """
-    if not authorization:
+def validate_token(authorization: str | None, db: Session) -> DBSession:
+    """Validate authorization header and return session"""
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
             detail={"error": {"code": "UNAUTHORIZED", "message": "Authorization header required"}}
         )
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid authorization format"}}
-        )
+    token = authorization[7:]
+    session = db.query(DBSession).filter(DBSession.session_token == token).first()
 
-    token = authorization[7:]  # Remove "Bearer " prefix
-
-    if token not in sessions:
+    if not session:
         raise HTTPException(
             status_code=401,
             detail={"error": {"code": "SESSION_EXPIRED", "message": "Session has expired or is invalid"}}
         )
 
-    return token
+    return session
 
-def check_rate_limit(token: str, action: str) -> None:
-    """
-    Phase 8: Check rate limits for actions
-
-    Limits:
-    - chat: 10 per minute
-    - save: 5 per minute
-    - personalize: 5 per minute
-    """
-    now = datetime.now()
-
-    if token not in rate_limits:
-        rate_limits[token] = {
-            "chat_count": 0,
-            "save_count": 0,
-            "personalize_count": 0,
-            "last_reset": now
-        }
-
-    limits = rate_limits[token]
-
-    # Reset counters every minute
-    if (now - limits["last_reset"]).total_seconds() > 60:
-        limits["chat_count"] = 0
-        limits["save_count"] = 0
-        limits["personalize_count"] = 0
-        limits["last_reset"] = now
-
-    # Check limits
-    if action == "chat" and limits["chat_count"] >= 10:
-        raise HTTPException(
-            status_code=429,
-            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many chat requests. Please wait a moment."}}
-        )
-    elif action in ["save", "personalize"] and limits[f"{action}_count"] >= 5:
-        raise HTTPException(
-            status_code=429,
-            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": f"Too many {action} requests. Please wait a moment."}}
-        )
-
-    # Increment counter
-    limits[f"{action}_count"] += 1
+# ===== Auth Endpoints =====
 
 @app.post("/api/v1/auth/signup", response_model=SignupResponse)
-async def signup(request: SignupRequest):
-    """
-    STEP 1.2: Signup endpoint (MINIMAL, BORING, SAFE)
+async def signup(request: SignupRequest, db: Session = Depends(get_db)):
+    """User signup with email verification"""
 
-    Input: { email, consent_data_storage, migrate_session? }
-
-    Validate:
-    - email format
-    - consent === true (hard fail)
-
-    Action:
-    - generate verification token (10 min TTL)
-    - send email (dummy console log for now)
-
-    Response:
-    - { "status": "verification_sent" }
-
-    NO: login, session creation, data migration
-    """
-    # Validate email format
-    if not is_valid_email(request.email):
-        raise HTTPException(
-            status_code=400,
-            detail={"error": {"code": "INVALID_EMAIL", "message": "Please enter a valid email address"}}
-        )
-
-    # Validate consent (GDPR requirement)
-    if not request.consent_data_storage:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": {"code": "CONSENT_REQUIRED", "message": "You must consent to data storage to create an account"}}
-        )
-
-    # Generate verification token (10 min TTL)
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(minutes=10)
-
-    verification_tokens[token] = {
-        "email": request.email,
-        "expires_at": expires_at
-    }
-
-    # Create user record (unverified)
-    if request.email not in users:
-        users[request.email] = {
-            "email_verified": False,
-            "tier": "lightweight"
-        }
-
-    # Send email (dummy console log for now)
-    print(f"📧 VERIFICATION EMAIL (mock)")
-    print(f"   To: {request.email}")
-    print(f"   Token: {token}")
-    print(f"   Expires: {expires_at}")
-    print(f"   Link: http://localhost:3000/verify?token={token}")
-
-    return SignupResponse(status="verification_sent")
-
-@app.post("/api/v1/auth/verify", response_model=VerifyResponse)
-async def verify(request: VerifyRequest):
-    """
-    STEP 1.3: Verify endpoint behavior
-
-    Input: { token }
-
-    Action:
-    - validate token
-    - create session token
-
-    Response:
-    - { "session_token": "...", "user_profile": { "email": "...", "tier": "lightweight" } }
-
-    NO: OAuth, personalization, feature unlocks
-    """
-    # Validate token exists
-    if request.token not in verification_tokens:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid or expired verification token"}}
-        )
-
-    token_data = verification_tokens[request.token]
-
-    # Check expiration
-    if datetime.now() > token_data["expires_at"]:
-        del verification_tokens[request.token]
-        raise HTTPException(
-            status_code=400,
-            detail={"error": {"code": "TOKEN_EXPIRED", "message": "Verification token has expired"}}
-        )
-
-    # Create session token
-    session_token = secrets.token_urlsafe(32)
-    email = token_data["email"]
-
-    sessions[session_token] = {
-        "email": email,
-        "tier": "lightweight",
-        "created_at": datetime.now()
-    }
-
-    # Mark user as verified
-    if email in users:
-        users[email]["email_verified"] = True
-
-    # Clean up verification token (one-time use)
-    del verification_tokens[request.token]
-
-    print(f"✅ SESSION CREATED (mock)")
-    print(f"   Email: {email}")
-    print(f"   Session Token: {session_token}")
-    print(f"   Email Verified: True")
-
-    return VerifyResponse(
-        session_token=session_token,
-        user_profile=UserProfile(
-            email=email,
-            tier="lightweight"
-        )
-    )
-
-@app.get("/api/v1/auth/session-check")
-async def session_check(authorization: str = Header(None)):
-    """
-    Phase 7C-C: Session validity check
-
-    Input: Authorization header with Bearer token
-    Output: Session status + user profile
-
-    Used by widget to auto-detect authenticated users on load.
-    """
-    # Check authorization header
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail={"error": {"code": "UNAUTHORIZED", "message": "Authorization header required"}}
-        )
-
-    # Extract token from "Bearer <token>"
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid authorization format"}}
-        )
-
-    token = authorization[7:]  # Remove "Bearer " prefix
-
-    # Check if session exists
-    if token not in sessions:
-        raise HTTPException(
-            status_code=401,
-            detail={"error": {"code": "SESSION_EXPIRED", "message": "Session has expired or is invalid"}}
-        )
-
-    session_data = sessions[token]
-
-    print(f"✅ SESSION VALID (mock)")
-    print(f"   Email: {session_data['email']}")
-    print(f"   Token: {token}")
-
-    return {
-        "valid": True,
-        "user": UserProfile(
-            email=session_data["email"],
-            tier=session_data["tier"]
-        )
-    }
-
-@app.post("/api/v1/chat/save", response_model=SaveChatResponse)
-async def save_chat(request: SaveChatRequest, authorization: str = Header(None)):
-    """
-    Phase 8: Save chat for authenticated user
-
-    Input: Authorization header + messages list
-    Output: { chat_id, saved_at }
-
-    Rate limit: 5 saves per minute
-    """
-    # Validate token
-    token = validate_token(authorization)
-
-    # Check rate limit
-    check_rate_limit(token, "save")
-
-    session_data = sessions[token]
-
-    # Generate chat ID
-    chat_id = secrets.token_urlsafe(16)
-
-    # Save chat
-    saved_chats[chat_id] = {
-        "user_email": session_data["email"],
-        "messages": request.messages,
-        "saved_at": datetime.now(),
-        "title": request.title or f"Chat {len(saved_chats) + 1}"
-    }
-
-    print(f"💾 CHAT SAVED (mock)")
-    print(f"   Chat ID: {chat_id}")
-    print(f"   User: {session_data['email']}")
-    print(f"   Messages: {len(request.messages)}")
-
-    return SaveChatResponse(
-        chat_id=chat_id,
-        saved_at=datetime.now().isoformat()
-    )
-
-@app.post("/api/v1/user/personalize", response_model=PersonalizeResponse)
-async def personalize(request: PersonalizeRequest, authorization: str = Header(None)):
-    """
-    Phase 8: Generate personalized recommendations
-
-    Input: Authorization header + optional preferences
-    Output: { recommendations, personalized_content }
-
-    Rate limit: 5 personalize actions per minute
-    """
-    # Validate token
-    token = validate_token(authorization)
-
-    # Check rate limit
-    check_rate_limit(token, "personalize")
-
-    session_data = sessions[token]
-
-    # Mock personalization (in real app, use ML/AI)
-    recommendations = [
-        "Chapter 3: Advanced Robotics Concepts",
-        "Tutorial: Building Your First Humanoid",
-        "Video: Understanding Sensor Fusion"
-    ]
-
-    personalized_content = {
-        "difficulty_level": "intermediate",
-        "learning_path": ["basics", "sensors", "control", "advanced"],
-        "next_chapter": "perception-action-loops"
-    }
-
-    print(f"✨ PERSONALIZATION ACTIVATED (mock)")
-    print(f"   User: {session_data['email']}")
-    print(f"   Preferences: {request.preferences}")
-
-    return PersonalizeResponse(
-        recommendations=recommendations,
-        personalized_content=personalized_content
-    )
-
-@app.post("/api/v1/auth/resend-verification", response_model=ResendVerificationResponse)
-async def resend_verification(request: ResendVerificationRequest):
-    """
-    Phase 8: Resend email verification link
-
-    Input: { email }
-    Output: { status: "verification_sent" }
-
-    No rate limit (handled by email provider)
-    """
     # Validate email
     if not is_valid_email(request.email):
         raise HTTPException(
@@ -474,173 +135,292 @@ async def resend_verification(request: ResendVerificationRequest):
             detail={"error": {"code": "INVALID_EMAIL", "message": "Please enter a valid email address"}}
         )
 
-    # Generate new verification token (10 min TTL)
+    # Validate consent
+    if not request.consent_data_storage:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "CONSENT_REQUIRED", "message": "You must consent to data storage"}}
+        )
+
+    # Create or get user
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        user = User(email=request.email, email_verified=False, tier="lightweight")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # Create verification token
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(minutes=10)
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
 
-    verification_tokens[token] = {
-        "email": request.email,
-        "expires_at": expires_at
+    verification = VerificationToken(
+        email=request.email,
+        token=token,
+        expires_at=expires_at,
+        used=False
+    )
+    db.add(verification)
+    db.commit()
+
+    # Send email (via service)
+    await email_service.send_verification_email(request.email, token)
+
+    # Log analytics event
+    await analytics_service.log_event(db, "signup", user_email=request.email)
+
+    return SignupResponse(status="verification_sent")
+
+@app.post("/api/v1/auth/verify", response_model=VerifyResponse)
+async def verify(request: VerifyRequest, db: Session = Depends(get_db)):
+    """Verify email with token"""
+
+    # Find token
+    verification = db.query(VerificationToken).filter(
+        VerificationToken.token == request.token,
+        VerificationToken.used == False
+    ).first()
+
+    if not verification:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid or expired verification token"}}
+        )
+
+    # Check expiration
+    if datetime.utcnow() > verification.expires_at:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "TOKEN_EXPIRED", "message": "Verification token has expired"}}
+        )
+
+    # Mark token as used
+    verification.used = True
+
+    # Update user
+    user = db.query(User).filter(User.email == verification.email).first()
+    if user:
+        user.email_verified = True
+
+    # Create session
+    session_token = secrets.token_urlsafe(32)
+    session = DBSession(
+        user_id=user.id,
+        session_token=session_token,
+        created_at=datetime.utcnow(),
+        last_activity=datetime.utcnow()
+    )
+    db.add(session)
+    db.commit()
+
+    # Log analytics event
+    await analytics_service.log_event(db, "email_verified", user_email=user.email)
+
+    return VerifyResponse(
+        session_token=session_token,
+        user_profile=UserProfile(email=user.email, tier=user.tier)
+    )
+
+@app.get("/api/v1/auth/session-check")
+async def session_check(authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Check session validity"""
+    session = validate_token(authorization, db)
+    user = db.query(User).filter(User.id == session.user_id).first()
+
+    # Update last activity
+    session.last_activity = datetime.utcnow()
+    db.commit()
+
+    return {
+        "valid": True,
+        "user": UserProfile(email=user.email, tier=user.tier)
     }
-
-    # Send email (dummy console log)
-    print(f"📧 VERIFICATION EMAIL RESENT (mock)")
-    print(f"   To: {request.email}")
-    print(f"   Token: {token}")
-    print(f"   Expires: {expires_at}")
-    print(f"   Link: http://localhost:3000/verify?token={token}")
-
-    return ResendVerificationResponse(status="verification_sent")
 
 @app.get("/api/v1/auth/verification-status")
-async def verification_status(authorization: str = Header(None)):
-    """
-    Phase 9: Check email verification status
+async def verification_status(authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Check email verification status"""
+    session = validate_token(authorization, db)
+    user = db.query(User).filter(User.id == session.user_id).first()
 
-    Input: Authorization header with Bearer token
-    Output: { verified: bool }
-
-    Used by widget to show verification badge.
-    """
-    # Validate token
-    token = validate_token(authorization)
-    session_data = sessions[token]
-    email = session_data["email"]
-
-    # Get verification status
-    verified = users.get(email, {}).get("email_verified", False)
-
-    print(f"🔍 VERIFICATION STATUS CHECK (mock)")
-    print(f"   Email: {email}")
-    print(f"   Verified: {verified}")
-
-    return {"verified": verified}
+    return {"verified": user.email_verified}
 
 @app.post("/api/v1/auth/refresh-token")
-async def refresh_token(authorization: str = Header(None)):
-    """
-    Phase 9: Refresh session token
+async def refresh_token(authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Refresh session token"""
+    old_session = validate_token(authorization, db)
 
-    Input: Authorization header with Bearer token
-    Output: { token: str }
-
-    Issues new token with extended TTL.
-    Old token remains valid for 5 minutes for graceful transition.
-    """
-    # Validate old token
-    old_token = validate_token(authorization)
-    session_data = sessions[old_token]
-
-    # Generate new token
+    # Create new token
     new_token = secrets.token_urlsafe(32)
-
-    # Copy session data to new token
-    sessions[new_token] = {
-        "email": session_data["email"],
-        "tier": session_data["tier"],
-        "created_at": datetime.now()
-    }
-
-    print(f"🔄 TOKEN REFRESHED (mock)")
-    print(f"   Email: {session_data['email']}")
-    print(f"   Old Token: {old_token[:16]}...")
-    print(f"   New Token: {new_token[:16]}...")
+    new_session = DBSession(
+        user_id=old_session.user_id,
+        session_token=new_token,
+        created_at=datetime.utcnow(),
+        last_activity=datetime.utcnow()
+    )
+    db.add(new_session)
+    db.commit()
 
     return {"token": new_token}
 
-class MigrateSessionRequest(BaseModel):
-    anon_id: str
+@app.post("/api/v1/auth/resend-verification", response_model=ResendVerificationResponse)
+async def resend_verification(request: ResendVerificationRequest, db: Session = Depends(get_db)):
+    """Resend verification email"""
 
-class MigrateSessionResponse(BaseModel):
-    migrated_messages: int
+    if not is_valid_email(request.email):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"code": "INVALID_EMAIL", "message": "Please enter a valid email address"}}
+        )
+
+    # Create new token
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    verification = VerificationToken(
+        email=request.email,
+        token=token,
+        expires_at=expires_at,
+        used=False
+    )
+    db.add(verification)
+    db.commit()
+
+    # Send email
+    await email_service.send_verification_email(request.email, token)
+
+    return ResendVerificationResponse(status="verification_sent")
 
 @app.post("/api/v1/auth/migrate-session", response_model=MigrateSessionResponse)
-async def migrate_session(request: MigrateSessionRequest, authorization: str = Header(None)):
-    """
-    Phase 9: Migrate anonymous session to authenticated user
+async def migrate_session(request: MigrateSessionRequest, authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Migrate anonymous session to authenticated user"""
+    session = validate_token(authorization, db)
+    user = db.query(User).filter(User.id == session.user_id).first()
 
-    Input: Authorization header + anon_id
-    Output: { migrated_messages: int }
+    # Find anonymous session
+    anon_session = db.query(AnonymousSession).filter(AnonymousSession.anon_id == request.anon_id).first()
 
-    Transfers anonymous chat messages to authenticated user's saved chats.
-    """
-    # Validate token
-    token = validate_token(authorization)
-    session_data = sessions[token]
-
-    # Get anonymous session
-    if request.anon_id not in anonymous_sessions:
+    if not anon_session:
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "SESSION_NOT_FOUND", "message": "Anonymous session not found"}}
         )
 
-    anon_session = anonymous_sessions[request.anon_id]
-    messages = anon_session.get("messages", [])
+    messages = anon_session.messages
 
-    # Create saved chat from anonymous messages
+    # Create saved chat
     if messages:
-        chat_id = secrets.token_urlsafe(16)
-        saved_chats[chat_id] = {
-            "user_email": session_data["email"],
-            "messages": messages,
-            "saved_at": datetime.now(),
-            "title": f"Migrated Chat (Anonymous Session)"
-        }
+        saved_chat = SavedChat(
+            user_id=user.id,
+            title="Migrated Chat (Anonymous Session)",
+            messages=messages,
+            created_at=datetime.utcnow()
+        )
+        db.add(saved_chat)
 
-    # Clean up anonymous session
-    del anonymous_sessions[request.anon_id]
+    # Delete anonymous session
+    db.delete(anon_session)
+    db.commit()
 
-    print(f"🔀 SESSION MIGRATED (mock)")
-    print(f"   Anon ID: {request.anon_id}")
-    print(f"   User: {session_data['email']}")
-    print(f"   Messages: {len(messages)}")
+    # Log analytics event
+    await analytics_service.log_event(db, "anonymous_to_authenticated", user_email=user.email, event_data={"migrated_messages": len(messages)})
 
     return MigrateSessionResponse(migrated_messages=len(messages))
 
-@app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """
-    Mock RAG endpoint
+# ===== Chat Endpoints =====
 
-    Returns static response matching contract spec.
-    NO vector DB, NO LLM - just wiring validation.
-    """
-    start_time = time.time()
+@app.post("/api/v1/chat/save", response_model=SaveChatResponse)
+async def save_chat(request: SaveChatRequest, authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Save chat for authenticated user"""
+    session = validate_token(authorization, db)
+    user = db.query(User).filter(User.id == session.user_id).first()
 
-    # Mock retrieval time
-    retrieval_time_ms = 95
+    # Create saved chat
+    saved_chat = SavedChat(
+        user_id=user.id,
+        title=request.title or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+        messages=request.messages,
+        created_at=datetime.utcnow()
+    )
+    db.add(saved_chat)
+    db.commit()
+    db.refresh(saved_chat)
 
-    # Mock generation time
-    generation_time_ms = 650
+    # Log analytics event
+    await analytics_service.log_event(db, "save_chat", user_email=user.email, event_data={"chat_id": saved_chat.id})
 
-    # Mock response (static)
-    mock_response = ChatResponse(
-        answer="Mock response from backend. Your question was: '{}'".format(request.message),
-        sources=[
-            Source(
-                id="mock-source-1",
-                title="Mock Chapter: Physical AI Introduction",
-                url="/docs/mock-page",
-                excerpt="This is a mock source excerpt for testing...",
-                score=0.92
-            )
-        ],
-        metadata=ResponseMetadata(
-            model="mock-model",
-            tokens_used=150,
-            retrieval_time_ms=retrieval_time_ms,
-            generation_time_ms=generation_time_ms,
-            total_time_ms=int((time.time() - start_time) * 1000)
-        )
+    return SaveChatResponse(
+        chat_id=str(saved_chat.id),
+        saved_at=saved_chat.created_at.isoformat()
     )
 
-    return mock_response
+# ===== User Endpoints =====
+
+@app.post("/api/v1/user/personalize", response_model=PersonalizeResponse)
+async def personalize(request: PersonalizeRequest, authorization: str = Header(None), db: Session = Depends(get_db)):
+    """Generate personalized recommendations"""
+    session = validate_token(authorization, db)
+    user = db.query(User).filter(User.id == session.user_id).first()
+
+    # Get user's saved chats for context
+    saved_chats = db.query(SavedChat).filter(SavedChat.user_id == user.id).all()
+    chat_history = []
+    for chat in saved_chats:
+        chat_history.extend(chat.messages)
+
+    # Get recommendations from service
+    result = await personalize_service.get_recommendations(
+        user_email=user.email,
+        user_tier=user.tier,
+        preferences=request.preferences,
+        chat_history=chat_history
+    )
+
+    # Log analytics event
+    await analytics_service.log_event(db, "personalize", user_email=user.email)
+
+    return PersonalizeResponse(
+        recommendations=result["recommendations"],
+        personalized_content=result["personalized_content"]
+    )
+
+# ===== Analytics Endpoints =====
+
+@app.post("/api/v1/analytics/event", response_model=AnalyticsEventResponse)
+async def log_analytics_event(
+    request: AnalyticsEventRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Log analytics event (authenticated or anonymous)"""
+
+    user_email = None
+    if authorization:
+        try:
+            session = validate_token(authorization, db)
+            user = db.query(User).filter(User.id == session.user_id).first()
+            user_email = user.email
+        except:
+            pass  # Allow anonymous events
+
+    # Log event
+    event = await analytics_service.log_event(
+        db,
+        event_type=request.event_type,
+        user_email=user_email,
+        event_data=request.event_data
+    )
+
+    return AnalyticsEventResponse(
+        event_id=event.id,
+        logged_at=event.created_at.isoformat()
+    )
+
+# ===== Health Endpoint =====
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {"status": "ok", "version": "0.1.0"}
+    """Health check"""
+    return {"status": "ok", "version": "0.2.0"}
 
 if __name__ == "__main__":
     import uvicorn
