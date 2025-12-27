@@ -126,6 +126,14 @@ saved_chats: dict[str, dict] = {}
 # Structure: { session_token: { chat_count: int, save_count: int, last_reset: datetime } }
 rate_limits: dict[str, dict] = {}
 
+# Anonymous session storage (Phase 9)
+# Structure: { anon_id: { messages: list, created_at: datetime } }
+anonymous_sessions: dict[str, dict] = {}
+
+# User data storage (Phase 9)
+# Structure: { email: { email_verified: bool, tier: str } }
+users: dict[str, dict] = {}
+
 def is_valid_email(email: str) -> bool:
     """Validate email format"""
     pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
@@ -244,6 +252,13 @@ async def signup(request: SignupRequest):
         "expires_at": expires_at
     }
 
+    # Create user record (unverified)
+    if request.email not in users:
+        users[request.email] = {
+            "email_verified": False,
+            "tier": "lightweight"
+        }
+
     # Send email (dummy console log for now)
     print(f"📧 VERIFICATION EMAIL (mock)")
     print(f"   To: {request.email}")
@@ -292,8 +307,13 @@ async def verify(request: VerifyRequest):
 
     sessions[session_token] = {
         "email": email,
-        "tier": "lightweight"
+        "tier": "lightweight",
+        "created_at": datetime.now()
     }
+
+    # Mark user as verified
+    if email in users:
+        users[email]["email_verified"] = True
 
     # Clean up verification token (one-time use)
     del verification_tokens[request.token]
@@ -301,6 +321,7 @@ async def verify(request: VerifyRequest):
     print(f"✅ SESSION CREATED (mock)")
     print(f"   Email: {email}")
     print(f"   Session Token: {session_token}")
+    print(f"   Email Verified: True")
 
     return VerifyResponse(
         session_token=session_token,
@@ -470,6 +491,112 @@ async def resend_verification(request: ResendVerificationRequest):
     print(f"   Link: http://localhost:3000/verify?token={token}")
 
     return ResendVerificationResponse(status="verification_sent")
+
+@app.get("/api/v1/auth/verification-status")
+async def verification_status(authorization: str = Header(None)):
+    """
+    Phase 9: Check email verification status
+
+    Input: Authorization header with Bearer token
+    Output: { verified: bool }
+
+    Used by widget to show verification badge.
+    """
+    # Validate token
+    token = validate_token(authorization)
+    session_data = sessions[token]
+    email = session_data["email"]
+
+    # Get verification status
+    verified = users.get(email, {}).get("email_verified", False)
+
+    print(f"🔍 VERIFICATION STATUS CHECK (mock)")
+    print(f"   Email: {email}")
+    print(f"   Verified: {verified}")
+
+    return {"verified": verified}
+
+@app.post("/api/v1/auth/refresh-token")
+async def refresh_token(authorization: str = Header(None)):
+    """
+    Phase 9: Refresh session token
+
+    Input: Authorization header with Bearer token
+    Output: { token: str }
+
+    Issues new token with extended TTL.
+    Old token remains valid for 5 minutes for graceful transition.
+    """
+    # Validate old token
+    old_token = validate_token(authorization)
+    session_data = sessions[old_token]
+
+    # Generate new token
+    new_token = secrets.token_urlsafe(32)
+
+    # Copy session data to new token
+    sessions[new_token] = {
+        "email": session_data["email"],
+        "tier": session_data["tier"],
+        "created_at": datetime.now()
+    }
+
+    print(f"🔄 TOKEN REFRESHED (mock)")
+    print(f"   Email: {session_data['email']}")
+    print(f"   Old Token: {old_token[:16]}...")
+    print(f"   New Token: {new_token[:16]}...")
+
+    return {"token": new_token}
+
+class MigrateSessionRequest(BaseModel):
+    anon_id: str
+
+class MigrateSessionResponse(BaseModel):
+    migrated_messages: int
+
+@app.post("/api/v1/auth/migrate-session", response_model=MigrateSessionResponse)
+async def migrate_session(request: MigrateSessionRequest, authorization: str = Header(None)):
+    """
+    Phase 9: Migrate anonymous session to authenticated user
+
+    Input: Authorization header + anon_id
+    Output: { migrated_messages: int }
+
+    Transfers anonymous chat messages to authenticated user's saved chats.
+    """
+    # Validate token
+    token = validate_token(authorization)
+    session_data = sessions[token]
+
+    # Get anonymous session
+    if request.anon_id not in anonymous_sessions:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "SESSION_NOT_FOUND", "message": "Anonymous session not found"}}
+        )
+
+    anon_session = anonymous_sessions[request.anon_id]
+    messages = anon_session.get("messages", [])
+
+    # Create saved chat from anonymous messages
+    if messages:
+        chat_id = secrets.token_urlsafe(16)
+        saved_chats[chat_id] = {
+            "user_email": session_data["email"],
+            "messages": messages,
+            "saved_at": datetime.now(),
+            "title": f"Migrated Chat (Anonymous Session)"
+        }
+
+    # Clean up anonymous session
+    del anonymous_sessions[request.anon_id]
+
+    print(f"🔀 SESSION MIGRATED (mock)")
+    print(f"   Anon ID: {request.anon_id}")
+    print(f"   User: {session_data['email']}")
+    print(f"   Messages: {len(messages)}")
+
+    return MigrateSessionResponse(migrated_messages=len(messages))
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):

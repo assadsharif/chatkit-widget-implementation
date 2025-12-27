@@ -22,6 +22,8 @@ export class ChatKitWidget extends HTMLElement {
   private sessionId: string;
   private questionCount: number = 0;
   private messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  private anonSessionId: string | null = null;
+  private refreshInterval: number | null = null;
 
   constructor() {
     super();
@@ -53,6 +55,28 @@ export class ChatKitWidget extends HTMLElement {
     if (isValid) {
       // Show action bar for authenticated users
       this.showActionBar();
+
+      // Phase 9: Check email verification status
+      await this.checkEmailVerification();
+
+      // Phase 9: Setup session auto-refresh (every 5 minutes)
+      this.refreshInterval = window.setInterval(async () => {
+        const refreshed = await this.refreshToken();
+        if (!refreshed) {
+          this.showToast('Session expired. Please log in again.', 'error');
+          await this.handleLogout();
+        }
+      }, 300000); // 5 minutes
+
+      // Phase 9: Check for anonymous session migration
+      await this.checkMigration();
+    } else {
+      // Phase 9: Generate anonymous session ID for potential migration
+      this.anonSessionId = localStorage.getItem('anon_session_id');
+      if (!this.anonSessionId) {
+        this.anonSessionId = crypto.randomUUID();
+        localStorage.setItem('anon_session_id', this.anonSessionId);
+      }
     }
   }
 
@@ -72,7 +96,11 @@ export class ChatKitWidget extends HTMLElement {
 
   disconnectedCallback() {
     // Called when element is removed from DOM
-    // Cleanup will be added in later phases
+    // Phase 9: Cleanup refresh interval
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
   }
 
   private render(): void {
@@ -238,6 +266,13 @@ export class ChatKitWidget extends HTMLElement {
     // Phase 8: Logout functionality
     await this.authClient.logout();
     this.hideActionBar();
+
+    // Phase 9: Clear refresh interval
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+
     this.appendMessage('👋 You have been logged out. Chat remains available anonymously.', 'assistant');
   }
 
@@ -265,14 +300,19 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
+          // Phase 9: Use toast for rate limit errors
+          if (response.status === 429) {
+            this.showToast(error.error?.message || 'Rate limit exceeded. Please try again later.', 'error');
+            return;
+          }
           throw new Error(error.error?.message || 'Failed to save chat');
         }
 
         const data = await response.json();
-        this.appendMessage(`💾 Chat saved successfully! (ID: ${data.chat_id})`, 'assistant');
+        this.showToast(`💾 Chat saved successfully! (ID: ${data.chat_id})`, 'success');
       } catch (error: any) {
         this.removeMessage(loadingId);
-        this.appendMessage(`❌ Error saving chat: ${error.message}`, 'assistant');
+        this.showToast(error.message || 'Failed to save chat', 'error');
       }
     } else {
       // User not authenticated - open signup modal
@@ -304,6 +344,11 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
+          // Phase 9: Use toast for rate limit errors
+          if (response.status === 429) {
+            this.showToast(error.error?.message || 'Rate limit exceeded. Please try again later.', 'error');
+            return;
+          }
           throw new Error(error.error?.message || 'Failed to personalize');
         }
 
@@ -312,9 +357,10 @@ export class ChatKitWidget extends HTMLElement {
         // Show recommendations
         const recsText = `✨ Personalized recommendations:\n${data.recommendations.map((r: string) => `• ${r}`).join('\n')}`;
         this.appendMessage(recsText, 'assistant');
+        this.showToast('Personalization applied!', 'success');
       } catch (error: any) {
         this.removeMessage(loadingId);
-        this.appendMessage(`❌ Error personalizing: ${error.message}`, 'assistant');
+        this.showToast(error.message || 'Failed to personalize', 'error');
       }
     } else {
       // User not authenticated - open signup modal
@@ -490,6 +536,200 @@ export class ChatKitWidget extends HTMLElement {
     if (message) {
       message.remove();
     }
+  }
+
+  // ===== Phase 9: Toast Notifications =====
+
+  private showToast(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
+    const container = this.shadow.querySelector('.chatkit-toast-container') as HTMLElement;
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const toastId = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    toast.id = toastId;
+    toast.className = `chatkit-toast chatkit-toast-${type}`;
+
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'chatkit-toast-close';
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => {
+      toast.remove();
+    });
+
+    toast.appendChild(messageSpan);
+    toast.appendChild(closeBtn);
+    container.appendChild(toast);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.remove();
+      }
+    }, 5000);
+  }
+
+  // ===== Phase 9: Email Verification =====
+
+  private async checkEmailVerification(): Promise<void> {
+    try {
+      const token = this.authClient.getSessionToken();
+      if (!token) return;
+
+      const response = await fetch('http://localhost:8000/api/v1/auth/verification-status', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const badge = this.shadow.querySelector('.chatkit-verification-badge') as HTMLElement;
+
+      if (!data.verified && badge) {
+        badge.style.display = 'block';
+        // Wire resend verification button
+        badge.addEventListener('click', () => this.handleResendVerification());
+      } else if (badge) {
+        badge.style.display = 'none';
+      }
+    } catch (error) {
+      console.error('Failed to check verification status:', error);
+    }
+  }
+
+  private async handleResendVerification(): Promise<void> {
+    try {
+      const session = this.authClient.getSession();
+      if (!session) return;
+
+      const response = await fetch('http://localhost:8000/api/v1/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: session.profile.email,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to resend verification email');
+      }
+
+      this.showToast('Verification email sent! Check your inbox.', 'success');
+    } catch (error: any) {
+      this.showToast(error.message || 'Failed to resend verification email', 'error');
+    }
+  }
+
+  // ===== Phase 9: Session Refresh =====
+
+  private async refreshToken(): Promise<boolean> {
+    try {
+      const oldToken = this.authClient.getSessionToken();
+      if (!oldToken) return false;
+
+      const response = await fetch('http://localhost:8000/api/v1/auth/refresh-token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${oldToken}`,
+        },
+      });
+
+      if (!response.ok) return false;
+
+      const data = await response.json();
+
+      // Update token in authClient
+      this.authClient.updateSessionToken(data.token);
+
+      return true;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      return false;
+    }
+  }
+
+  // ===== Phase 9: Data Migration =====
+
+  private async checkMigration(): Promise<void> {
+    // Check if there's an anonymous session to migrate
+    const anonId = localStorage.getItem('anon_session_id');
+    const anonMessages = localStorage.getItem('anon_messages');
+
+    if (anonId && anonMessages && this.authClient.isAuthenticated()) {
+      this.showMigrationPrompt(anonId);
+    }
+  }
+
+  private showMigrationPrompt(anonId: string): void {
+    const prompt = this.shadow.querySelector('.chatkit-migration-prompt') as HTMLElement;
+    if (!prompt) return;
+
+    prompt.style.display = 'flex';
+
+    const acceptBtn = this.shadow.querySelector('.chatkit-migration-accept') as HTMLButtonElement;
+    const declineBtn = this.shadow.querySelector('.chatkit-migration-decline') as HTMLButtonElement;
+
+    // Wire accept button
+    acceptBtn?.addEventListener('click', async () => {
+      await this.handleMigration(anonId);
+      this.hideMigrationPrompt();
+    });
+
+    // Wire decline button
+    declineBtn?.addEventListener('click', () => {
+      this.clearAnonymousSession();
+      this.hideMigrationPrompt();
+    });
+  }
+
+  private hideMigrationPrompt(): void {
+    const prompt = this.shadow.querySelector('.chatkit-migration-prompt') as HTMLElement;
+    if (prompt) {
+      prompt.style.display = 'none';
+    }
+  }
+
+  private async handleMigration(anonId: string): Promise<void> {
+    try {
+      const token = this.authClient.getSessionToken();
+      if (!token) return;
+
+      const response = await fetch('http://localhost:8000/api/v1/auth/migrate-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          anon_id: anonId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Migration failed');
+      }
+
+      const data = await response.json();
+      this.showToast(`✅ Migrated ${data.migrated_messages} messages to your account!`, 'success');
+
+      // Clear anonymous session
+      this.clearAnonymousSession();
+    } catch (error: any) {
+      this.showToast(error.message || 'Failed to migrate session', 'error');
+    }
+  }
+
+  private clearAnonymousSession(): void {
+    localStorage.removeItem('anon_session_id');
+    localStorage.removeItem('anon_messages');
+    this.anonSessionId = null;
   }
 }
 

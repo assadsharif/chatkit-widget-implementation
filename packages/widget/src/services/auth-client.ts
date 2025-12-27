@@ -269,6 +269,14 @@ export class AuthClient {
   }
 
   /**
+   * Update session token (Phase 9: Session refresh)
+   */
+  updateSessionToken(newToken: string): void {
+    this.sessionToken = newToken;
+    this.saveSessionToStorage();
+  }
+
+  /**
    * Check if user is authenticated (alias for isLoggedIn)
    * Phase 7C-C: Used by Save Chat / Personalize triggers
    */

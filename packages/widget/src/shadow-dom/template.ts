@@ -40,6 +40,9 @@ export function getTemplate(): string {
         <button class="chatkit-logout-btn" aria-label="Logout" title="Sign out">
           🚪 Logout
         </button>
+        <button class="chatkit-verification-badge" style="display: none;" aria-label="Email not verified" title="Click to resend verification email">
+          ⚠️ Verify Email
+        </button>
       </div>
 
       <div class="chatkit-input-area">
@@ -88,6 +91,21 @@ export function getTemplate(): string {
         <div class="chatkit-modal-footer">
           <button class="chatkit-modal-cancel">Cancel</button>
           <button class="chatkit-modal-submit">Sign Up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 9: Toast Notifications -->
+    <div class="chatkit-toast-container"></div>
+
+    <!-- Phase 9: Migration Prompt -->
+    <div class="chatkit-migration-prompt" style="display: none;">
+      <div class="chatkit-migration-content">
+        <h4>💾 Migrate Previous Chat?</h4>
+        <p>You have an anonymous chat session. Would you like to save it to your account?</p>
+        <div class="chatkit-migration-buttons">
+          <button class="chatkit-migration-accept">Yes, Save It</button>
+          <button class="chatkit-migration-decline">No Thanks</button>
         </div>
       </div>
     </div>
