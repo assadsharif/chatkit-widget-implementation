@@ -41,3 +41,24 @@ Thumbs.db
 .parcel-cache/
 .next/
 out/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backups
+*.backup
