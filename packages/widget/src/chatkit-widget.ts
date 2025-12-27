@@ -133,6 +133,7 @@ export class ChatKitWidget extends HTMLElement {
       'MESSAGE_TOO_LONG': 'Your message is too long. Please keep it under 2000 characters.',
       'RATE_LIMIT_EXCEEDED': 'Too many requests. Please wait a moment and try again.',
       'NETWORK_ERROR': 'Unable to connect to the service. Please check your connection.',
+      'REQUEST_TIMEOUT': "I'm offline right now, I'll reconnect shortly.",
       'REQUEST_CANCELLED': 'Request was cancelled.',
       'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again.',
     };

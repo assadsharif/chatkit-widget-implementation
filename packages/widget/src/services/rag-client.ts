@@ -73,9 +73,11 @@ export class RAGClientError extends Error {
 export class RAGClient {
   private baseURL: string;
   private abortController: AbortController | null = null;
+  private timeout: number;
 
-  constructor(baseURL: string = 'http://localhost:8000') {
+  constructor(baseURL: string = 'http://localhost:8000', timeout: number = 30000) {
     this.baseURL = baseURL;
+    this.timeout = timeout; // Default 30s timeout
   }
 
   /**
@@ -92,6 +94,13 @@ export class RAGClient {
     // Create AbortController for cancellation
     this.abortController = new AbortController();
 
+    // Set timeout to abort request
+    const timeoutId = setTimeout(() => {
+      if (this.abortController) {
+        this.abortController.abort();
+      }
+    }, this.timeout);
+
     try {
       const response = await fetch(`${this.baseURL}/api/v1/chat`, {
         method: 'POST',
@@ -102,6 +111,9 @@ export class RAGClient {
         signal: this.abortController.signal,
       });
 
+      // Clear timeout on success
+      clearTimeout(timeoutId);
+
       // Handle HTTP errors
       if (!response.ok) {
         await this.handleErrorResponse(response);
@@ -111,13 +123,19 @@ export class RAGClient {
       const data: RAGResponse = await response.json();
       return data;
     } catch (error) {
+      // Clear timeout on error
+      clearTimeout(timeoutId);
+
       // Handle network errors
       if (error instanceof RAGClientError) {
         throw error; // Re-throw RAGClientError
       }
 
       if ((error as any).name === 'AbortError') {
-        throw new RAGClientError('REQUEST_CANCELLED', 'Request was cancelled');
+        throw new RAGClientError(
+          'REQUEST_TIMEOUT',
+          'Request timed out. Please try again.'
+        );
       }
 
       throw new RAGClientError(
