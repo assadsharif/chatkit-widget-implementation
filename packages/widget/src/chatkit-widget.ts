@@ -337,10 +337,11 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
-          // Phase 10: Use countdown toast for rate limit errors
+          // Phase 11B: Backend-driven rate limiting (read retry_after from response)
           if (response.status === 429) {
-            this.setRateLimitCooldown('save_chat', 60); // 60 second cooldown
-            this.showRateLimitToast(60);
+            const retryAfter = error.retry_after || 60; // Fallback to 60s if missing
+            this.setRateLimitCooldown('save_chat', retryAfter);
+            this.showRateLimitToast(retryAfter);
             this.updateButtonStates();
             return;
           }
@@ -392,10 +393,11 @@ export class ChatKitWidget extends HTMLElement {
 
         if (!response.ok) {
           const error = await response.json();
-          // Phase 10: Use countdown toast for rate limit errors
+          // Phase 11B: Backend-driven rate limiting (read retry_after from response)
           if (response.status === 429) {
-            this.setRateLimitCooldown('personalize', 60); // 60 second cooldown
-            this.showRateLimitToast(60);
+            const retryAfter = error.retry_after || 60; // Fallback to 60s if missing
+            this.setRateLimitCooldown('personalize', retryAfter);
+            this.showRateLimitToast(retryAfter);
             this.updateButtonStates();
             return;
           }

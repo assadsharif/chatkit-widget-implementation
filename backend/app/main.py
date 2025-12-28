@@ -28,6 +28,9 @@ from app.services import email_service, personalize_service, analytics_service
 # Test fixtures (Phase 11A)
 from app import test_fixtures
 
+# Rate limiter (Phase 11B)
+from app import rate_limiter
+
 app = FastAPI(title="ChatKit API", version="0.3.0-dev")
 
 # CORS (Phase 11C: CORS lockdown)
@@ -38,6 +41,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Phase 11C: Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Add security headers to all responses"""
+    response = await call_next(request)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking attacks
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Control referrer information
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Content Security Policy (basic, can be enhanced)
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+
+    # XSS Protection (legacy, but still useful for older browsers)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    return response
 
 # ===== Startup/Shutdown =====
 
@@ -365,6 +391,17 @@ async def save_chat(request: SaveChatRequest, authorization: str = Header(None),
     session = validate_token(authorization, db)
     user = db.query(User).filter(User.id == session.user_id).first()
 
+    # Phase 11B: Rate limit check (backend authority)
+    allowed, retry_after = rate_limiter.check_rate_limit(db, session.session_token, "save_chat")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limited",
+                "retry_after": retry_after
+            }
+        )
+
     # Create saved chat
     saved_chat = SavedChat(
         user_id=user.id,
@@ -391,6 +428,17 @@ async def personalize(request: PersonalizeRequest, authorization: str = Header(N
     """Generate personalized recommendations"""
     session = validate_token(authorization, db)
     user = db.query(User).filter(User.id == session.user_id).first()
+
+    # Phase 11B: Rate limit check (backend authority)
+    allowed, retry_after = rate_limiter.check_rate_limit(db, session.session_token, "personalize")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limited",
+                "retry_after": retry_after
+            }
+        )
 
     # Get user's saved chats for context
     saved_chats = db.query(SavedChat).filter(SavedChat.user_id == user.id).all()
