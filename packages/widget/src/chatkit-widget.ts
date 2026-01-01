@@ -44,6 +44,10 @@ export class ChatKitWidget extends HTMLElement {
 
   connectedCallback() {
     // Called when element is added to DOM
+
+    // Phase 12 (11C): HTTPS assumption guard - enforce HTTPS in production
+    this.enforceHTTPS();
+
     this.render();
     this.wireEvents();
     this.initSession();
@@ -53,6 +57,87 @@ export class ChatKitWidget extends HTMLElement {
       session_id: this.sessionId,
       timestamp: Date.now(),
     });
+  }
+
+  /**
+   * Phase 12 (11C): HTTPS Assumption Guard
+   *
+   * Enforces HTTPS in production to prevent token interception.
+   * - Production (non-localhost): Refuses to initialize if not HTTPS
+   * - Development (localhost): Warns but allows HTTP
+   */
+  private enforceHTTPS(): void {
+    const isHTTPS = window.location.protocol === 'https:';
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '[::1]';
+
+    if (!isHTTPS && !isLocalhost) {
+      // Production mode: Refuse to initialize
+      const errorMsg =
+        '🔒 SECURITY ERROR: ChatKit widget requires HTTPS in production. Refusing to initialize.';
+      console.error(errorMsg);
+      console.error(
+        'Current protocol:',
+        window.location.protocol,
+        'Hostname:',
+        window.location.hostname
+      );
+
+      // Show error in widget UI
+      if (this.shadow) {
+        const errorHTML = `
+          <style>
+            .chatkit-https-error {
+              padding: 20px;
+              background: #fee;
+              border: 2px solid #c00;
+              border-radius: 8px;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            .chatkit-https-error h3 {
+              color: #c00;
+              margin: 0 0 10px 0;
+              font-size: 16px;
+            }
+            .chatkit-https-error p {
+              margin: 0 0 8px 0;
+              color: #333;
+              font-size: 14px;
+              line-height: 1.5;
+            }
+            .chatkit-https-error code {
+              background: #f5f5f5;
+              padding: 2px 6px;
+              border-radius: 3px;
+              font-family: 'Courier New', monospace;
+              font-size: 13px;
+            }
+          </style>
+          <div class="chatkit-https-error">
+            <h3>🔒 Security Error</h3>
+            <p>This widget requires HTTPS to protect your data.</p>
+            <p><strong>Current:</strong> <code>${window.location.protocol}//${window.location.hostname}</code></p>
+            <p><strong>Required:</strong> <code>https://${window.location.hostname}</code></p>
+            <p>Please enable HTTPS on your site or use localhost for development.</p>
+          </div>
+        `;
+        this.shadow.innerHTML = errorHTML;
+      }
+
+      // Throw error to prevent further initialization
+      throw new Error(errorMsg);
+    } else if (!isHTTPS && isLocalhost) {
+      // Development mode: Warn but allow
+      console.warn(
+        '⚠️  WARNING: ChatKit widget running over HTTP on localhost. ' +
+          'This is only safe for development. Use HTTPS in production.'
+      );
+    } else {
+      // HTTPS in production or localhost - all good
+      console.log('✅ HTTPS check passed:', window.location.protocol);
+    }
   }
 
   private async initSession(): Promise<void> {

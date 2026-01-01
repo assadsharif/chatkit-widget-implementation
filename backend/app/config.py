@@ -64,18 +64,46 @@ def validate_required_env_vars() -> None:
     Validate that required environment variables are set.
     Crash early if missing critical configuration.
 
-    Phase 11C: Security hardening - fail fast on missing secrets.
+    Phase 12 (11C complete): Security hardening - fail fast on missing secrets.
     """
-    # In production, these should be set
+    # Always required - crash if missing
+    if not DATABASE_URL:
+        raise ValueError(
+            "❌ FATAL: DATABASE_URL environment variable is not set. "
+            "Set DATABASE_URL to a valid database connection string."
+        )
+
+    # Production mode: Strict validation (crash early)
     if not INTEGRATION_TEST_MODE:
+        # SECRET_KEY must be set and not using default value
+        if not os.getenv("SECRET_KEY"):
+            raise ValueError(
+                "❌ FATAL: SECRET_KEY environment variable is not set in production mode.\n"
+                "   Set SECRET_KEY to a cryptographically secure random value (256-bit recommended).\n"
+                "   Example: export SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+            )
+
         if SECRET_KEY == "dev-secret-key-change-in-production":
-            print("⚠️  WARNING: Using default SECRET_KEY in production mode. Set SECRET_KEY env var.")
+            raise ValueError(
+                "❌ FATAL: SECRET_KEY is using the default development value in production mode.\n"
+                "   This is a critical security vulnerability.\n"
+                "   Set SECRET_KEY environment variable to a unique random value.\n"
+                "   Example: export SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+            )
 
+        # Database warnings (not fatal, but important)
         if DATABASE_URL.startswith("sqlite"):
-            print("⚠️  WARNING: Using SQLite in production mode. Consider PostgreSQL.")
+            print("=" * 80)
+            print("⚠️  WARNING: Using SQLite in production mode.")
+            print("   SQLite is not recommended for production. Consider PostgreSQL or MySQL.")
+            print("   Set DATABASE_URL to a production database connection string.")
+            print("=" * 80)
 
-    # Always required
-    assert DATABASE_URL, "DATABASE_URL must be set"
+        # Success message
+        print("✅ Security validation passed: All required secrets are set")
+    else:
+        # Integration test mode: Lenient validation
+        print("🧪 Integration test mode: Using development configuration")
 
 
 def get_integration_test_diagnostics() -> dict:

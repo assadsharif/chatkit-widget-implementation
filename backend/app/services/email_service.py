@@ -55,22 +55,33 @@ class EmailService:
 
         # Phase 11A: Skip email sending in integration test mode
         if not self.email_enabled:
+            # Phase 12 (11C): Only log token in test mode
             print(f"🧪 EMAIL SKIPPED (Integration Test Mode) - Token: {token}")
             return True
 
-        # Console log (mock)
+        # Console log (mock) - Phase 12 (11C): Don't log tokens in production
         print("=" * 80)
         print("📧 EMAIL SENT (Mock)")
         print("=" * 80)
         print(f"To: {to_email}")
         print(f"From: {self.from_email}")
         print(f"Subject: Verify Your Email")
-        print(f"Token: {token}")
-        print(f"Link: {verification_link}")
+        # Phase 12 (11C): Don't log token in production (security)
+        if config.INTEGRATION_TEST_MODE:
+            print(f"Token: {token}")
+            print(f"Link: {verification_link}")
+        else:
+            print(f"Token: [REDACTED - check email for verification link]")
+            print(f"Link: [REDACTED - check email]")
         print("=" * 80)
-        print("HTML Body:")
-        print(email_html)
-        print("=" * 80)
+        # Phase 12 (11C): Don't log HTML body in production (may contain token)
+        if config.INTEGRATION_TEST_MODE:
+            print("HTML Body:")
+            print(email_html)
+            print("=" * 80)
+        else:
+            print("HTML Body: [REDACTED]")
+            print("=" * 80)
 
         # Production implementation:
         # try:
