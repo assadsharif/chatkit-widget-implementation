@@ -3,9 +3,12 @@
  *
  * Email-based authentication (Tier-1 only, no OAuth yet).
  * Implements Phase 5 design: anonymous-first, value-first, non-blocking.
+ * Phase 13A: Request ID tracing for correlation
  *
  * Design Reference: docs/design/T028-auth-state-diagram.md
  */
+
+import { fetchWithRequestId } from '../utils/http.js';
 
 // Auth state types (from Phase 5 design)
 export type AuthState =
@@ -131,7 +134,8 @@ export class AuthClient {
     }
 
     try {
-      const response = await fetch(`${this.baseURL}/api/v1/auth/signup`, {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId(`${this.baseURL}/api/v1/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
@@ -162,7 +166,8 @@ export class AuthClient {
    */
   async verifyEmail(request: VerifyEmailRequest): Promise<VerifyEmailResponse> {
     try {
-      const response = await fetch(`${this.baseURL}/api/v1/auth/verify`, {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId(`${this.baseURL}/api/v1/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
@@ -308,7 +313,8 @@ export class AuthClient {
     }
 
     try {
-      const response = await fetch(`${this.baseURL}/api/v1/auth/session-check`, {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId(`${this.baseURL}/api/v1/auth/session-check`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${this.sessionToken}`,

@@ -14,6 +14,7 @@ import { getStyles } from './shadow-dom/styles.js';
 import { ChatKitSendEvent } from './events/widget-events.js';
 import { RAGClient, RAGClientError } from './services/rag-client.js';
 import { AuthClient } from './services/auth-client.js';
+import { fetchWithRequestId } from './utils/http.js'; // Phase 13A: Request tracing
 
 export class ChatKitWidget extends HTMLElement {
   private shadow: ShadowRoot;
@@ -406,7 +407,8 @@ export class ChatKitWidget extends HTMLElement {
 
       try {
         const token = this.authClient.getSessionToken();
-        const response = await fetch('http://localhost:8000/api/v1/chat/save', {
+        // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+        const response = await fetchWithRequestId('http://localhost:8000/api/v1/chat/save', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -463,7 +465,8 @@ export class ChatKitWidget extends HTMLElement {
 
       try {
         const token = this.authClient.getSessionToken();
-        const response = await fetch('http://localhost:8000/api/v1/user/personalize', {
+        // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+        const response = await fetchWithRequestId('http://localhost:8000/api/v1/user/personalize', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -773,7 +776,8 @@ export class ChatKitWidget extends HTMLElement {
       const token = this.authClient.getSessionToken();
       if (!token) return;
 
-      const response = await fetch('http://localhost:8000/api/v1/auth/verification-status', {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId('http://localhost:8000/api/v1/auth/verification-status', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -802,7 +806,8 @@ export class ChatKitWidget extends HTMLElement {
       const session = this.authClient.getSession();
       if (!session) return;
 
-      const response = await fetch('http://localhost:8000/api/v1/auth/resend-verification', {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId('http://localhost:8000/api/v1/auth/resend-verification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -857,7 +862,8 @@ export class ChatKitWidget extends HTMLElement {
       const oldToken = this.authClient.getSessionToken();
       if (!oldToken) return false;
 
-      const response = await fetch('http://localhost:8000/api/v1/auth/refresh-token', {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId('http://localhost:8000/api/v1/auth/refresh-token', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${oldToken}`,
@@ -927,7 +933,8 @@ export class ChatKitWidget extends HTMLElement {
       const token = this.authClient.getSessionToken();
       if (!token) return;
 
-      const response = await fetch('http://localhost:8000/api/v1/auth/migrate-session', {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId('http://localhost:8000/api/v1/auth/migrate-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -977,7 +984,8 @@ export class ChatKitWidget extends HTMLElement {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      await fetch(`${this.analyticsBaseURL}/api/v1/analytics/event`, {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      await fetchWithRequestId(`${this.analyticsBaseURL}/api/v1/analytics/event`, {
         method: 'POST',
         headers,
         body: JSON.stringify({

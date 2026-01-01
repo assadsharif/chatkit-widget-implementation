@@ -1,13 +1,15 @@
 """
-FastAPI Backend - Phase 11 (Integration & Hardening)
+FastAPI Backend - Phase 11 (Integration & Hardening) + Phase 13 (Observability)
 
 Clean orchestration layer with database persistence.
 All business logic delegated to services.
 Phase 11A: Integration test mode support.
+Phase 13C: Global exception handler for error boundaries.
 """
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Literal, Optional
@@ -31,7 +33,16 @@ from app import test_fixtures
 # Rate limiter (Phase 11B)
 from app import rate_limiter
 
-app = FastAPI(title="ChatKit API", version="0.3.0-dev")
+# Middleware (Phase 13A)
+from app.middleware import RequestIDMiddleware
+
+# Logger (Phase 13B)
+from app.logger import log
+
+app = FastAPI(title="ChatKit API", version="0.4.0-dev")
+
+# Phase 13A: Request ID Middleware (must be first for tracing)
+app.add_middleware(RequestIDMiddleware)
 
 # CORS (Phase 11C: CORS lockdown)
 app.add_middleware(
@@ -65,6 +76,43 @@ async def add_security_headers(request, call_next):
 
     return response
 
+# Phase 13C: Global Exception Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler for all unhandled exceptions.
+
+    Phase 13C: Error Boundaries & Failure Surfaces
+
+    Ensures all exceptions return:
+    1. Structured error response with request_id
+    2. Appropriate HTTP status code
+    3. Logged error with full context
+    4. User-safe error message (no stack traces in production)
+    """
+    # Get request ID from request state (set by RequestIDMiddleware)
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    # Log error with structured logging
+    log.error(
+        "unhandled_exception",
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+        request_id=request_id,
+        request_method=request.method,
+        request_url=str(request.url),
+    )
+
+    # Return structured error response
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": "internal_error",
+            "message": "An unexpected error occurred. Please try again later.",
+            "request_id": request_id,
+        }
+    )
+
 # ===== Startup/Shutdown =====
 
 @app.on_event("startup")
@@ -96,6 +144,125 @@ async def startup():
     else:
         diagnostics = config.get_integration_test_diagnostics()
         print(f"🚀 Production mode: {diagnostics}")
+
+# ===== Phase 13D: Metrics Tracking =====
+
+from datetime import datetime as dt
+import time
+
+# Simple in-memory metrics (Phase 13D: Minimal metrics, not Prometheus cosplay)
+class MetricsTracker:
+    """Lightweight metrics tracker for operational visibility."""
+
+    def __init__(self):
+        self.startup_time = time.time()
+        self.total_requests = 0
+        self.error_count = 0
+        self.rate_limit_hits = 0
+        self.response_times = []  # Last 100 response times
+
+    def record_request(self, response_time_ms: float, is_error: bool = False):
+        """Record a request."""
+        self.total_requests += 1
+        if is_error:
+            self.error_count += 1
+
+        # Keep last 100 response times for avg calculation
+        self.response_times.append(response_time_ms)
+        if len(self.response_times) > 100:
+            self.response_times.pop(0)
+
+    def record_rate_limit(self):
+        """Record a rate limit hit."""
+        self.rate_limit_hits += 1
+
+    def get_uptime_seconds(self) -> int:
+        """Get server uptime in seconds."""
+        return int(time.time() - self.startup_time)
+
+    def get_avg_response_ms(self) -> float:
+        """Get average response time in milliseconds."""
+        if not self.response_times:
+            return 0.0
+        return sum(self.response_times) / len(self.response_times)
+
+    def get_error_rate(self) -> float:
+        """Get error rate as percentage."""
+        if self.total_requests == 0:
+            return 0.0
+        return (self.error_count / self.total_requests) * 100
+
+metrics = MetricsTracker()
+
+# ===== Phase 13D: Observability Endpoints =====
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint.
+
+    Phase 13D: Minimal health signal for monitoring/load balancers.
+
+    Returns:
+        200: Service is healthy
+        500: Service is unhealthy
+    """
+    try:
+        # Check database connectivity
+        db = next(get_db())
+        try:
+            # Simple query to verify DB is responsive
+            db.execute("SELECT 1")
+            db_status = "connected"
+        except Exception as e:
+            log.error("health_check_db_failure", error=str(e))
+            db_status = "disconnected"
+        finally:
+            db.close()
+
+        # Health check response
+        health_data = {
+            "status": "ok" if db_status == "connected" else "degraded",
+            "database": db_status,
+            "uptime_seconds": metrics.get_uptime_seconds(),
+        }
+
+        # Return 200 if healthy, 500 if degraded
+        status_code = 200 if db_status == "connected" else 500
+
+        return JSONResponse(content=health_data, status_code=status_code)
+
+    except Exception as e:
+        log.error("health_check_failure", error=str(e))
+        return JSONResponse(
+            content={"status": "error", "database": "unknown", "uptime_seconds": 0},
+            status_code=500
+        )
+
+@app.get("/metrics")
+async def metrics_lite():
+    """
+    Lightweight metrics endpoint.
+
+    Phase 13D: NOT Prometheus cosplay - just what matters for ops.
+
+    Returns metrics:
+    - total_requests: Total HTTP requests handled
+    - error_rate: Percentage of requests that errored
+    - rate_limit_hits: Number of rate limit triggers
+    - avg_response_ms: Average response time (last 100 requests)
+    - uptime_seconds: Server uptime
+
+    Security: No secrets exposed.
+    """
+    return {
+        "total_requests": metrics.total_requests,
+        "error_count": metrics.error_count,
+        "error_rate_percent": round(metrics.get_error_rate(), 2),
+        "rate_limit_hits": metrics.rate_limit_hits,
+        "avg_response_ms": round(metrics.get_avg_response_ms(), 2),
+        "uptime_seconds": metrics.get_uptime_seconds(),
+    }
 
 # ===== Pydantic Models (API Contracts) =====
 

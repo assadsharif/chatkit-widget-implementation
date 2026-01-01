@@ -5,9 +5,12 @@
  * Isolated from UI - pure data layer.
  *
  * Phase 7B-3: Fetch adapter (NOT connected to widget yet)
+ * Phase 13A: Request ID tracing for correlation
  *
  * Contract: specs/phase-7b/rag-api.contract.md
  */
+
+import { fetchWithRequestId, getRequestIdFromResponse } from '../utils/http.js';
 
 // Request types (from contract)
 export interface RAGContext {
@@ -102,7 +105,8 @@ export class RAGClient {
     }, this.timeout);
 
     try {
-      const response = await fetch(`${this.baseURL}/api/v1/chat`, {
+      // Phase 13A: Use fetchWithRequestId for automatic request ID injection
+      const response = await fetchWithRequestId(`${this.baseURL}/api/v1/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -113,6 +117,12 @@ export class RAGClient {
 
       // Clear timeout on success
       clearTimeout(timeoutId);
+
+      // Phase 13A: Log request ID for correlation (optional)
+      const requestId = getRequestIdFromResponse(response);
+      if (requestId) {
+        console.debug('RAG request completed:', requestId);
+      }
 
       // Handle HTTP errors
       if (!response.ok) {

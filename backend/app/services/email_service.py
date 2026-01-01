@@ -1,16 +1,18 @@
 """
-Email Service - Phase 11A
+Email Service - Phase 11A + Phase 13B
 
 SMTP integration for sending verification emails.
 Currently using console logging (mock).
 
 Phase 11A: Respects EMAIL_ENABLED config (disabled in integration test mode).
+Phase 13B: Structured logging for observability.
 Production: Update with real SMTP credentials.
 """
 
 import os
 from typing import Optional
 from app import config
+from app.logger import log
 
 class EmailService:
     """Email sending service"""
@@ -55,33 +57,19 @@ class EmailService:
 
         # Phase 11A: Skip email sending in integration test mode
         if not self.email_enabled:
-            # Phase 12 (11C): Only log token in test mode
-            print(f"🧪 EMAIL SKIPPED (Integration Test Mode) - Token: {token}")
+            # Phase 13B: Structured logging
+            log.info("email_skipped_test_mode", to_email=to_email, token=token)  # Token OK in test mode
             return True
 
-        # Console log (mock) - Phase 12 (11C): Don't log tokens in production
-        print("=" * 80)
-        print("📧 EMAIL SENT (Mock)")
-        print("=" * 80)
-        print(f"To: {to_email}")
-        print(f"From: {self.from_email}")
-        print(f"Subject: Verify Your Email")
-        # Phase 12 (11C): Don't log token in production (security)
-        if config.INTEGRATION_TEST_MODE:
-            print(f"Token: {token}")
-            print(f"Link: {verification_link}")
-        else:
-            print(f"Token: [REDACTED - check email for verification link]")
-            print(f"Link: [REDACTED - check email]")
-        print("=" * 80)
-        # Phase 12 (11C): Don't log HTML body in production (may contain token)
-        if config.INTEGRATION_TEST_MODE:
-            print("HTML Body:")
-            print(email_html)
-            print("=" * 80)
-        else:
-            print("HTML Body: [REDACTED]")
-            print("=" * 80)
+        # Phase 13B: Structured logging (replaces console mock)
+        log.info(
+            "email_sent_mock",
+            to_email=to_email,
+            from_email=self.from_email,
+            subject="Verify Your Email",
+            # Token automatically redacted by logger (Phase 12 security)
+            verification_link=verification_link if config.INTEGRATION_TEST_MODE else "[REDACTED]"
+        )
 
         # Production implementation:
         # try:

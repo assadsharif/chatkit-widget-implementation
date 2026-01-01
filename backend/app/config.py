@@ -1,5 +1,5 @@
 """
-Configuration Module - Phase 11A
+Configuration Module - Phase 11A + Phase 13B
 
 Handles application configuration including integration test mode.
 
