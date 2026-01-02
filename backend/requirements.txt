@@ -1,21 +1,23 @@
-# ChatKit Backend Dependencies - Phase 10
+# ChatKit Backend Dependencies - v0.4.0-observability-complete
 
 # Core Framework
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.5
 
-# Database (Phase 10)
+# Database - Neon Serverless PostgreSQL
 sqlalchemy==2.0.23
-psycopg2-binary==2.9.9  # PostgreSQL driver (optional, for production)
+psycopg2-binary==2.9.9  # PostgreSQL driver
+
+# Vector Database - Qdrant Cloud
+qdrant-client==1.7.0  # Qdrant Python client
+
+# RAG & Embeddings
+sentence-transformers==2.2.2  # Sentence embeddings (384-dim)
+torch==2.1.0  # PyTorch (required by sentence-transformers)
 
 # Utilities
 python-dotenv==1.0.1
 
 # Email (Production - optional, uncomment when needed)
 # aiosmtplib==3.0.1  # Async SMTP client
-
-# ML/AI (Production - optional, uncomment when needed)
-# transformers==4.35.0  # Hugging Face models
-# torch==2.1.0  # PyTorch
-# scikit-learn==1.3.2  # Collaborative filtering

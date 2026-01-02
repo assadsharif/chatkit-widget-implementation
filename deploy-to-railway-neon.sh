@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Railway Production Deployment Script
+# Railway + Neon Production Deployment Script
 # ChatKit Widget Backend - v0.4.0-observability-complete
 # Date: 2026-01-01
 
 set -e  # Exit on error
 
 echo "========================================="
-echo "ChatKit Backend - Railway Deployment"
+echo "ChatKit Backend - Railway + Neon Deployment"
 echo "Version: v0.4.0-observability-complete"
 echo "========================================="
 echo ""
@@ -16,6 +16,7 @@ echo ""
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Step 1: Check if Railway CLI is installed
@@ -25,11 +26,7 @@ if ! command -v railway &> /dev/null; then
     echo ""
     echo "Please install Railway CLI first:"
     echo ""
-    echo "  macOS/Linux:"
-    echo "    curl -fsSL https://railway.app/install.sh | sh"
-    echo ""
-    echo "  Windows (PowerShell):"
-    echo "    iwr https://railway.app/install.ps1 | iex"
+    echo "  npm install -g @railway/cli"
     echo ""
     echo "After installation, run this script again."
     exit 1
@@ -39,17 +36,34 @@ echo -e "${GREEN}✓ Railway CLI installed${NC}"
 railway --version
 echo ""
 
-# Step 2: Check if logged in to Railway
-echo "Step 2: Checking Railway authentication..."
-if ! railway whoami &> /dev/null; then
-    echo -e "${YELLOW}⚠ Not logged in to Railway${NC}"
-    echo "Logging in to Railway..."
-    railway login
-    echo -e "${GREEN}✓ Logged in successfully${NC}"
-else
-    echo -e "${GREEN}✓ Already logged in to Railway${NC}"
-    railway whoami
+# Step 2: Neon Database Setup
+echo "Step 2: Neon Database Setup..."
+echo -e "${BLUE}════════════════════════════════════════${NC}"
+echo ""
+echo "Before continuing, set up your Neon database:"
+echo ""
+echo "  1. Go to https://neon.tech and sign up (free tier available)"
+echo "  2. Create a new project"
+echo "  3. Copy the connection string from the dashboard"
+echo ""
+echo "  Example connection string:"
+echo "  postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
+echo ""
+echo -e "${BLUE}════════════════════════════════════════${NC}"
+echo ""
+
+# Prompt for Neon DATABASE_URL
+echo -e "${YELLOW}Enter your Neon DATABASE_URL:${NC}"
+read -r NEON_DATABASE_URL
+
+# Validate DATABASE_URL format
+if [[ ! "$NEON_DATABASE_URL" =~ ^postgresql:// ]]; then
+    echo -e "${RED}✗ Invalid DATABASE_URL format${NC}"
+    echo "Expected format: postgresql://user:password@host/database"
+    exit 1
 fi
+
+echo -e "${GREEN}✓ Neon DATABASE_URL provided${NC}"
 echo ""
 
 # Step 3: Generate production SECRET_KEY
@@ -77,18 +91,13 @@ else
 fi
 echo ""
 
-# Step 5: Add PostgreSQL database
-echo "Step 5: Setting up PostgreSQL database..."
-echo -e "${YELLOW}⚠ Please add PostgreSQL manually:${NC}"
-echo "  1. Open Railway dashboard: railway open"
-echo "  2. Click 'New' → 'Database' → 'Add PostgreSQL'"
-echo "  3. Wait for DATABASE_URL to be set"
-echo ""
-read -p "Press Enter once PostgreSQL is added..."
-echo ""
+# Step 5: Set environment variables
+echo "Step 5: Setting environment variables..."
 
-# Step 6: Set environment variables
-echo "Step 6: Setting environment variables..."
+# Set DATABASE_URL (Neon)
+echo "  Setting DATABASE_URL (Neon)..."
+railway variables set DATABASE_URL="$NEON_DATABASE_URL"
+echo -e "${GREEN}  ✓ DATABASE_URL set${NC}"
 
 # Set SECRET_KEY
 echo "  Setting SECRET_KEY..."
@@ -107,16 +116,16 @@ echo -e "${GREEN}  ✓ CORS_ORIGINS set (will update after deployment)${NC}"
 
 echo ""
 
-# Step 7: Deploy to Railway
-echo "Step 7: Deploying to Railway..."
+# Step 6: Deploy to Railway
+echo "Step 6: Deploying to Railway..."
 echo "  This may take 2-5 minutes..."
 railway up
 
 echo -e "${GREEN}✓ Deployment initiated${NC}"
 echo ""
 
-# Step 8: Get deployment URL
-echo "Step 8: Getting deployment URL..."
+# Step 7: Get deployment URL
+echo "Step 7: Getting deployment URL..."
 echo "  Fetching Railway domain..."
 sleep 5  # Wait for deployment to start
 
@@ -134,25 +143,26 @@ echo "     curl https://YOUR-DOMAIN.railway.app/health"
 echo "     Expected: {\"status\":\"ok\",\"database\":\"connected\",...}"
 echo ""
 
-# Step 9: Deployment summary
+# Step 8: Deployment summary
 echo "========================================="
 echo "Deployment Summary"
 echo "========================================="
 echo ""
 echo -e "${GREEN}✓ Railway project created/linked${NC}"
+echo -e "${GREEN}✓ Neon database configured${NC}"
 echo -e "${GREEN}✓ Environment variables set:${NC}"
+echo "    - DATABASE_URL: ********** (Neon)"
 echo "    - SECRET_KEY: ********** (generated)"
 echo "    - INTEGRATION_TEST_MODE: false"
 echo "    - CORS_ORIGINS: (update after getting domain)"
 echo ""
 echo -e "${YELLOW}⚠ Next Steps:${NC}"
-echo "  1. Add PostgreSQL database (if not done)"
-echo "  2. Generate Railway domain"
-echo "  3. Update CORS_ORIGINS with actual domain"
-echo "  4. Test health endpoint"
-echo "  5. Set up monitoring (UptimeRobot, Pingdom)"
+echo "  1. Generate Railway domain (Settings → Networking)"
+echo "  2. Update CORS_ORIGINS with actual domain"
+echo "  3. Test health endpoint"
+echo "  4. Set up monitoring (UptimeRobot, Pingdom)"
 echo ""
-echo "For detailed instructions, see: docs/DEPLOYMENT_GUIDE.md"
+echo "For detailed instructions, see: docs/DEPLOYMENT_GUIDE_NEON.md"
 echo ""
 echo "========================================="
 echo "Deployment script complete!"

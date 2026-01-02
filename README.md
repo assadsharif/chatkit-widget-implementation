@@ -11,19 +11,31 @@
 
 ---
 
-## 🚀 Quick Deploy
+## 🚀 Quick Deploy - Dual Database Architecture
+
+**Production Stack**:
+- 🚂 **Railway** - FastAPI backend hosting
+- 🐘 **Neon Serverless Postgres** - User data, sessions, chat history
+- 🔍 **Qdrant Cloud** - Vector embeddings for RAG retrieval
 
 **Ready to deploy to production?**
 
 ```bash
 # 1. Install Railway CLI (if not already installed)
-curl -fsSL https://railway.app/install.sh | sh
+npm install -g @railway/cli
 
-# 2. Run automated deployment
-./deploy-to-railway.sh
+# 2. Set up databases:
+#    • Neon: https://neon.tech (create project, copy DATABASE_URL)
+#    • Qdrant: https://cloud.qdrant.io (create cluster, copy URL + API key)
+
+# 3. Run automated deployment
+./deploy-to-railway-dual-db.sh
 ```
 
-**📋 Full deployment guide**: See [`DEPLOYMENT_STATUS.md`](./DEPLOYMENT_STATUS.md) for complete status, prerequisites, and step-by-step instructions.
+**📋 Setup Guides**:
+- [`docs/NEON_SETUP_GUIDE.md`](./docs/NEON_SETUP_GUIDE.md) - Neon Postgres setup (2 minutes)
+- [`docs/QDRANT_SETUP_GUIDE.md`](./docs/QDRANT_SETUP_GUIDE.md) - Qdrant vector DB setup (3 minutes)
+- [`DEPLOYMENT_STATUS.md`](./DEPLOYMENT_STATUS.md) - Complete deployment status
 
 ---
 
