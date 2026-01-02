@@ -11,31 +11,38 @@
 
 ---
 
-## 🚀 Quick Deploy - Dual Database Architecture
+## 🚀 Quick Start - Local Development & Docusaurus Integration
 
-**Production Stack**:
-- 🚂 **Railway** - FastAPI backend hosting
+**Development Stack**:
+- 🐍 **Python 3.11** - FastAPI backend (local)
 - 🐘 **Neon Serverless Postgres** - User data, sessions, chat history
 - 🔍 **Qdrant Cloud** - Vector embeddings for RAG retrieval
+- 📚 **Docusaurus** - Physical AI book (your existing site)
 
-**Ready to deploy to production?**
+**Get started in 5 minutes:**
 
 ```bash
-# 1. Install Railway CLI (if not already installed)
-npm install -g @railway/cli
-
-# 2. Set up databases:
+# 1. Set up databases (cloud, free tier):
 #    • Neon: https://neon.tech (create project, copy DATABASE_URL)
 #    • Qdrant: https://cloud.qdrant.io (create cluster, copy URL + API key)
 
-# 3. Run automated deployment
-./deploy-to-railway-dual-db.sh
+# 2. Run backend locally:
+cd backend
+python3 -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+# Create .env file with your credentials (see LOCAL_DEVELOPMENT.md)
+uvicorn app.main:app --reload
+
+# 3. Integrate with your Docusaurus site:
+# See DOCUSAURUS_INTEGRATION.md for complete guide
 ```
 
 **📋 Setup Guides**:
+- [`LOCAL_DEVELOPMENT.md`](./LOCAL_DEVELOPMENT.md) - Run backend locally (5 minutes)
+- [`DOCUSAURUS_INTEGRATION.md`](./DOCUSAURUS_INTEGRATION.md) - Add widget to Docusaurus (3 steps)
 - [`docs/NEON_SETUP_GUIDE.md`](./docs/NEON_SETUP_GUIDE.md) - Neon Postgres setup (2 minutes)
 - [`docs/QDRANT_SETUP_GUIDE.md`](./docs/QDRANT_SETUP_GUIDE.md) - Qdrant vector DB setup (3 minutes)
-- [`DEPLOYMENT_STATUS.md`](./DEPLOYMENT_STATUS.md) - Complete deployment status
 
 ---
 
