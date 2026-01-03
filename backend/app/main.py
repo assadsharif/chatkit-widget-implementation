@@ -7,15 +7,22 @@ Phase 11A: Integration test mode support.
 Phase 13C: Global exception handler for error boundaries.
 """
 
+# Load environment variables FIRST
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Literal, Optional
 from datetime import datetime, timedelta
 import secrets
 import re
+import os
 
 # Configuration (Phase 11A)
 from app import config
@@ -112,6 +119,17 @@ async def global_exception_handler(request: Request, exc: Exception):
             "request_id": request_id,
         }
     )
+
+# ===== Static Files - Widget Serving =====
+
+# Serve ChatKit widget files
+# Path from backend/app/main.py -> packages/widget/dist
+widget_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "packages", "widget", "dist"))
+if os.path.exists(widget_path):
+    app.mount("/widget", StaticFiles(directory=widget_path), name="widget")
+    print(f"✅ Widget files mounted at /widget from {widget_path}")
+else:
+    print(f"⚠️  Widget directory not found at {widget_path}")
 
 # ===== Startup/Shutdown =====
 
@@ -212,7 +230,7 @@ async def health_check():
         db = next(get_db())
         try:
             # Simple query to verify DB is responsive
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
             db_status = "connected"
         except Exception as e:
             log.error("health_check_db_failure", error=str(e))

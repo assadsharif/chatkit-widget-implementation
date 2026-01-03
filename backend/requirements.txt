@@ -13,8 +13,8 @@ psycopg2-binary==2.9.9  # PostgreSQL driver
 qdrant-client==1.7.0  # Qdrant Python client
 
 # RAG & Embeddings
-sentence-transformers==2.2.2  # Sentence embeddings (384-dim)
-torch==2.1.0  # PyTorch (required by sentence-transformers)
+sentence-transformers>=2.2.2  # Sentence embeddings (384-dim)
+# Note: Install torch separately with: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # Utilities
 python-dotenv==1.0.1
